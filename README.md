@@ -1,30 +1,32 @@
 # Mahoraga
 
-Autonomous trading agent powered by social sentiment analysis.
+An autonomous, LLM-powered trading agent that monitors social sentiment and makes trading decisions using AI.
 
-Mahoraga monitors StockTwits for trending stocks and automatically executes trades through Alpaca based on configurable risk parameters. It's designed as a starting point for building your own trading strategies.
+Mahoraga scrapes StockTwits for trending stocks, uses OpenAI to analyze signals and research opportunities, then executes trades through Alpaca. It's designed as a starting point for building your own agentic trading strategies.
 
 ## Features
 
+- **LLM-Powered Analysis** - OpenAI evaluates signals and decides what to buy/sell
 - **24/7 Sentiment Monitoring** - Scrapes StockTwits trending stocks
+- **Position Research** - AI continuously evaluates held positions
 - **Automatic Risk Management** - Stop-loss, take-profit, position limits, kill switch
-- **Real-Time Dashboard** - Monitor positions, signals, and agent activity
+- **Real-Time Dashboard** - Monitor positions, signals, research, and costs
 - **Paper Trading Mode** - Test safely before going live
-- **MCP Server Architecture** - Extensible tool-based design for adding your own data sources
-- **Policy Engine** - All trades validated against configurable risk rules
+- **MCP Server Architecture** - Extensible tool-based design
+- **Cost Tracking** - Monitor your OpenAI spend in real-time
 
 ## Requirements
 
 - Node.js 18+
 - Alpaca account (free, paper trading supported)
-- OpenAI API key (optional - for advanced AI features)
+- OpenAI API key (required for agentic features)
 
 ## Quick Start
 
 ### 1. Clone and install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/ygwyg/MAHORAGA.git
 cd mahoraga
 npm install
 cd dashboard && npm install && cd ..
@@ -66,8 +68,6 @@ In a new terminal:
 node agent-v1.mjs
 ```
 
-> **Note**: `agent-v1.mjs` is a simple rules-based agent using StockTwits sentiment. It's a great starting point for building your own strategy.
-
 ### 6. Start the dashboard (optional)
 
 In a new terminal:
@@ -90,14 +90,16 @@ Open `http://localhost:5173` in your browser.
 
 > Start with paper trading. Switch to live only after thorough testing.
 
-### OpenAI (Optional - for advanced features)
+### OpenAI (Required)
 
-The basic agent (`agent-v1.mjs`) doesn't require OpenAI. If you want to build LLM-powered features:
+The agent uses OpenAI for signal analysis and position management:
 
 1. Create an account at [platform.openai.com](https://platform.openai.com)
 2. Add billing and credits ($10 is plenty to start)
 3. Go to **API Keys** > **Create new secret key**
 4. Add to `.dev.vars`: `OPENAI_API_KEY=sk-your_key`
+
+**Estimated costs**: ~$0.50-2/day depending on trading activity (using gpt-4o-mini)
 
 ## Configuration
 
@@ -109,9 +111,11 @@ Edit `agent-config.json` (created on first run) or use the dashboard:
 | `max_position_value` | 2000 | Maximum $ per position |
 | `take_profit_pct` | 8 | Auto-sell at this % profit |
 | `stop_loss_pct` | 4 | Auto-sell at this % loss |
-| `min_sentiment_score` | 0.4 | Minimum bullish sentiment to consider |
+| `min_sentiment_score` | 0.3 | Minimum bullish sentiment to consider |
+| `min_analyst_confidence` | 0.6 | Minimum LLM confidence to trade |
 | `min_volume` | 10 | Minimum message volume to consider |
 | `position_size_pct_of_cash` | 20 | Max % of cash per position |
+| `llm_model` | gpt-4o-mini | OpenAI model for analysis |
 
 ## How It Works
 
@@ -122,10 +126,11 @@ Edit `agent-config.json` (created on first run) or use the dashboard:
 │                         AGENT (agent-v1.mjs)                    │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐     ┌─────────────────────────────────┐    │
-│  │   StockTwits    │     │      Simple Trading Logic       │    │
-│  │   Data Source   │────▶│  (rules-based buy/sell)         │    │
-│  │     (FREE)      │     │                                 │    │
-│  └─────────────────┘     └──────────────┬──────────────────┘    │
+│  │   StockTwits    │     │       LLM Analysis (OpenAI)     │    │
+│  │   Sentiment     │────▶│  • Signal research              │    │
+│  │                 │     │  • Position management          │    │
+│  └─────────────────┘     │  • Buy/sell decisions           │    │
+│                          └──────────────┬──────────────────┘    │
 └─────────────────────────────────────────┼───────────────────────┘
                                           │
                                           ▼
@@ -142,17 +147,36 @@ Edit `agent-config.json` (created on first run) or use the dashboard:
                     └─────────────┘
 ```
 
-### Trading Logic
+### Agentic Loop
 
 **Data Gathering (runs 24/7)**
 - Fetches trending stocks from StockTwits
 - Calculates sentiment score (bullish vs bearish messages)
-- Caches signals for trading decisions
+- LLM researches top signals: analyzes if sentiment is real, looks for red flags
 
 **Trading Loop (market hours only)**
-- Checks existing positions for stop-loss/take-profit
-- Evaluates new buy opportunities based on sentiment
+- Checks existing positions against stop-loss/take-profit rules
+- LLM analyzes each position: should we hold or sell?
+- LLM evaluates buy opportunities from researched signals
 - Executes trades through MCP server
+
+### LLM Decision Making
+
+The agent uses OpenAI for two key decisions:
+
+**Signal Research** - For each trending stock:
+```
+Is the sentiment justified? Is it too late? Any red flags?
+→ Returns: BUY / SKIP / WAIT with confidence score
+```
+
+**Position Analysis** - For each held position:
+```
+Is sentiment still supportive? Signs of exhaustion?
+→ Returns: HOLD / SELL with reasoning
+```
+
+Only BUY signals with confidence >= `min_analyst_confidence` (default 0.6) are executed.
 
 ### Order Flow (Two-Step Safety)
 
@@ -173,6 +197,7 @@ This prevents accidental trades and enforces risk limits.
 | Daily Loss Limit | Stops trading after 2% daily loss |
 | Cooldown Period | 30-minute pause after losses |
 | Approval Tokens | Orders expire after 5 minutes |
+| LLM Confidence Gate | Trades require minimum confidence |
 | No Margin | Cash-only trading |
 | No Shorting | Long positions only |
 
@@ -180,11 +205,14 @@ This prevents accidental trades and enforces risk limits.
 
 ### API Costs
 
-The basic agent uses **only free APIs**:
-- StockTwits API (free, no key required)
-- Alpaca paper trading (free)
+| Service | Cost | Notes |
+|---------|------|-------|
+| StockTwits | Free | No API key required |
+| Alpaca (paper) | Free | Practice trading |
+| Alpaca (live) | Free | Commission-free stocks |
+| OpenAI | ~$0.50-2/day | Using gpt-4o-mini |
 
-**Live trading**: Alpaca is commission-free for stocks.
+The dashboard shows real-time LLM cost tracking.
 
 ## Project Structure
 
@@ -197,8 +225,10 @@ mahoraga/
 ├── wrangler.toml             # Cloudflare Workers config
 ├── package.json
 │
-├── src/                      # MCP Server (you probably don't need to touch this)
+├── src/                      # MCP Server
 │   ├── index.ts              # Entry point
+│   ├── durable-objects/
+│   │   └── trading-agent.ts  # DO version of agent (optional)
 │   ├── mcp/
 │   │   └── agent.ts          # MCP tool definitions
 │   ├── policy/
@@ -207,7 +237,7 @@ mahoraga/
 │   │   └── approval.ts       # Token generation/validation
 │   ├── providers/
 │   │   ├── alpaca/           # Alpaca API client
-│   │   ├── llm/              # OpenAI integration (optional)
+│   │   ├── llm/              # OpenAI integration
 │   │   └── technicals.ts     # Technical indicators
 │   └── storage/
 │       └── d1/               # Database queries
@@ -232,7 +262,7 @@ npm run dev
 
 ### "Invalid API key"
 
-Check your `.dev.vars` file has correct Alpaca keys.
+Check your `.dev.vars` file has correct Alpaca and OpenAI keys.
 
 ### "Market is closed"
 
@@ -240,10 +270,17 @@ The agent only trades during market hours (9:30 AM - 4:00 PM ET, Mon-Fri). It ga
 
 ### Agent not making trades
 
-1. Check `min_sentiment_score` - might be too high (try 0.3)
-2. Check `max_positions` - might already be at limit
-3. Check `min_volume` - might be filtering out signals
-4. Check logs in dashboard or `agent-logs.json`
+1. Check `min_analyst_confidence` - LLM might not be confident enough (try 0.5)
+2. Check `min_sentiment_score` - might be too high (try 0.2)
+3. Check `max_positions` - might already be at limit
+4. Check research results in dashboard - see what the LLM is thinking
+5. Check logs in dashboard or `agent-logs.json`
+
+### High OpenAI costs
+
+1. Reduce polling frequency: increase `data_poll_interval_ms`
+2. Use cheaper model: set `llm_model` to `gpt-4o-mini`
+3. The dashboard shows real-time cost tracking
 
 ## Extending the Agent
 
@@ -285,10 +322,10 @@ The MCP server provides these tools for your agents:
 ### Ideas for Extension
 
 1. **Add more data sources**: Reddit, Twitter/X, news APIs, SEC filings
-2. **Add LLM analysis**: Use OpenAI to evaluate signals and generate insights  
-3. **Add technical indicators**: Use the `technicals-get` MCP tool
-4. **Multi-source confirmation**: Require 2+ sources to agree before trading
-5. **Options trading**: The MCP server supports options via Alpaca
+2. **Enhance LLM prompts**: Add technical analysis, fundamentals, news context
+3. **Multi-source confirmation**: Require 2+ sources to agree before trading
+4. **Options trading**: The MCP server supports options via Alpaca
+5. **Custom indicators**: Use the `technicals-get` MCP tool
 
 ## Disclaimer
 

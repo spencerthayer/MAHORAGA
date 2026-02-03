@@ -20,6 +20,8 @@ export type LLMProviderType = "openai-raw" | "ai-sdk" | "cloudflare-gateway";
 export function createLLMProvider(env: Env): LLMProvider | null {
   const providerType = (env.LLM_PROVIDER as LLMProviderType) ?? "openai-raw";
   const model = env.LLM_MODEL ?? "gpt-4o-mini";
+  const openaiBaseUrlRaw = env.OPENAI_BASE_URL?.trim().replace(/\/+$/, "");
+  const openaiBaseUrl = openaiBaseUrlRaw ? openaiBaseUrlRaw : undefined;
 
   switch (providerType) {
     case "cloudflare-gateway": {
@@ -67,7 +69,7 @@ export function createLLMProvider(env: Env): LLMProvider | null {
         return null;
       }
 
-      return createAISDKProvider({ model, apiKeys });
+      return createAISDKProvider({ model, apiKeys, openaiBaseUrl });
     }
 
     case "openai-raw":
@@ -79,6 +81,7 @@ export function createLLMProvider(env: Env): LLMProvider | null {
       return createOpenAIProvider({
         apiKey: env.OPENAI_API_KEY,
         model: model.includes("/") ? model.split("/")[1] : model,
+        baseUrl: openaiBaseUrl,
       });
   }
 }

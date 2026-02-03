@@ -31,7 +31,7 @@ export class OpenAIProvider implements LLMProvider {
   constructor(config: OpenAIConfig) {
     this.apiKey = config.apiKey;
     this.model = config.model ?? "gpt-4o-mini";
-    this.baseUrl = config.baseUrl ?? "https://api.openai.com/v1";
+    this.baseUrl = (config.baseUrl ?? "https://api.openai.com/v1").trim().replace(/\/+$/, "");
   }
 
   async complete(params: CompletionParams): Promise<CompletionResult> {

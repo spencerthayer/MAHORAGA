@@ -36,6 +36,8 @@ export interface AISDKConfig {
   model: string;
   /** API keys for each provider */
   apiKeys: Partial<Record<SupportedProvider, string>>;
+  /** Optional OpenAI base URL override (e.g., OpenAI-compatible proxy). */
+  openaiBaseUrl?: string;
 }
 
 type ProviderFactory =
@@ -60,7 +62,12 @@ export class AISDKProvider implements LLMProvider {
 
     // Initialize providers based on available API keys
     if (config.apiKeys.openai) {
-      this.providers.openai = createOpenAI({ apiKey: config.apiKeys.openai });
+      const rawBaseUrl = config.openaiBaseUrl?.trim().replace(/\/+$/, "");
+      const openaiOptions: { apiKey: string; baseURL?: string } = { apiKey: config.apiKeys.openai };
+      if (rawBaseUrl) {
+        openaiOptions.baseURL = rawBaseUrl;
+      }
+      this.providers.openai = createOpenAI(openaiOptions);
     }
     if (config.apiKeys.anthropic) {
       this.providers.anthropic = createAnthropic({ apiKey: config.apiKeys.anthropic });

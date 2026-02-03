@@ -215,7 +215,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                 </select>
                 <p className="text-[9px] text-hud-text-dim mt-1">
                   {localConfig.llm_provider === 'ai-sdk' && 'Supports: OpenAI, Anthropic, Google, xAI, DeepSeek'}
-                  {(!localConfig.llm_provider || localConfig.llm_provider === 'openai-raw') && 'Uses OPENAI_API_KEY directly.'}
+                  {(!localConfig.llm_provider || localConfig.llm_provider === 'openai-raw') && 'Uses OPENAI_API_KEY directly (+ optional OPENAI_BASE_URL).'}
                   {localConfig.llm_provider &&
                     !['openai-raw', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) &&
                     'Provider is configured in the backend; selection is hidden in the dashboard.'}

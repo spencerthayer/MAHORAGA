@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:prod": "MAHORAGA_API_URL=https://mahoraga-agent.burcs.workers.dev vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

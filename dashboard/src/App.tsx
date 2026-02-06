@@ -1028,7 +1028,9 @@ export default function App() {
                       content={
                         <div className="space-y-2 min-w-[200px]">
                           <div className="hud-label text-hud-primary border-b border-hud-line/50 pb-1">
-                            {symbol} DETAILS
+                            {isCryptoSymbol(symbol, config?.crypto_symbols) && (
+                              <span className="text-hud-warning text-xs">₿</span>
+                            )}{symbol} DETAILS
                           </div>
                           <div className="space-y-1">
                             <div className="flex justify-between">
@@ -1077,7 +1079,11 @@ export default function App() {
                         className="p-2 border border-hud-line/30 rounded hover:border-hud-line/60 cursor-help transition-colors"
                       >
                         <div className="flex justify-between items-center mb-1">
-                          <span className="hud-value-sm">{symbol}</span>
+                          <span className="hud-value-sm">
+                            {isCryptoSymbol(symbol, config?.crypto_symbols) && (
+                              <span className="text-hud-warning text-xs">₿</span>
+                            )}{symbol}
+                          </span>
                           <div className="flex items-center gap-2">
                             <span className={clsx('hud-label', getQualityColor(research.entry_quality))}>
                               {research.entry_quality.toUpperCase()}

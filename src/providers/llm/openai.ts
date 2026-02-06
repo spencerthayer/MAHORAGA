@@ -189,6 +189,31 @@ export class OpenAIProvider implements LLMProvider {
 
       const errorText = await response.text();
 
+      // Handle models that don't support system prompts (e.g. Gemma via OpenRouter free tier)
+      // Retry by converting system messages to user message prefix
+      if (response.status === 400 && errorText.includes("Developer instruction is not enabled") && attempt < maxRetries - 1) {
+        console.log(`[LLM] Model ${modelId} does not support system prompts, retrying with user-message fallback...`);
+        const messages = (body.messages || []) as Array<{ role: string; content: string }>;
+        const systemMessages = messages.filter((m) => m.role === "system");
+        const nonSystemMessages = messages.filter((m) => m.role !== "system");
+        if (systemMessages.length > 0) {
+          const systemPrefix = systemMessages.map((m) => m.content).join("\n");
+          // Prepend system content to the first user message
+          const first = nonSystemMessages[0];
+          if (first && first.role === "user") {
+            nonSystemMessages[0] = {
+              role: "user",
+              content: `Instructions: ${systemPrefix}\n\n${first.content}`,
+            };
+          } else {
+            nonSystemMessages.unshift({ role: "user", content: `Instructions: ${systemPrefix}` });
+          }
+          body.messages = nonSystemMessages;
+        }
+        lastError = createError(ErrorCode.PROVIDER_ERROR, `OpenAI API error (${response.status}): ${errorText}`);
+        continue;
+      }
+
       // Retry on 429 (rate limit) and 503 (service unavailable) with exponential backoff
       if ((response.status === 429 || response.status === 503) && attempt < maxRetries - 1) {
         const backoffMs = Math.min(1000 * Math.pow(2, attempt), 8000); // 1s, 2s, 4s (capped at 8s)

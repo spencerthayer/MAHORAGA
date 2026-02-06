@@ -222,6 +222,8 @@ interface AgentState {
   twitterDailyReadReset: number;
   premarketPlan: PremarketPlan | null;
   enabled: boolean;
+  /** Track recently ordered symbols with timestamps to prevent duplicate buys while orders are pending */
+  recentOrders: Record<string, number>;
 }
 
 // ============================================================================
@@ -324,6 +326,7 @@ const DEFAULT_STATE: AgentState = {
   twitterDailyReadReset: 0,
   premarketPlan: null,
   enabled: false,
+  recentOrders: {},
 };
 
 // Blacklist for ticker extraction - common English words and trading slang
@@ -915,9 +918,17 @@ export class MahoragaHarness extends DurableObject<Env> {
 
       const positions = await alpaca.trading.getPositions();
 
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:mainLoop:916',message:'cycle_positions',data:{positionSymbols:positions.map(p=>p.symbol),positionCount:positions.length,cachedBuyVerdicts:Object.entries(this.state.signalResearch).filter(([_,r])=>r.verdict==='BUY').map(([s,r])=>({symbol:s,confidence:r.confidence,age:Date.now()-r.timestamp}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+      // #endregion
+
       if (this.state.config.crypto_enabled) {
         await this.runCryptoTrading(alpaca, positions);
       }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:mainLoop:postCrypto',message:'post_crypto_state',data:{cachedBuyVerdicts:Object.entries(this.state.signalResearch).filter(([_,r])=>r.verdict==='BUY').map(([s,r])=>({symbol:s,confidence:r.confidence,isCrypto:s.includes('/')}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       if (clock.is_open) {
         if (this.isMarketJustOpened() && this.state.premarketPlan) {
@@ -1745,6 +1756,20 @@ export class MahoragaHarness extends DurableObject<Env> {
     const cryptoPositions = positions.filter((p) => cryptoSymbols.has(p.symbol) || p.symbol.includes("/"));
     const heldCrypto = new Set(cryptoPositions.map((p) => p.symbol));
 
+    // Also mark recently ordered symbols as held to prevent duplicate buys while orders are pending
+    const RECENT_ORDER_TTL_MS = 5 * 60_000; // 5 minutes
+    for (const [sym, ts] of Object.entries(this.state.recentOrders)) {
+      if (Date.now() - ts < RECENT_ORDER_TTL_MS) {
+        heldCrypto.add(sym);
+        // Also count toward crypto position limit
+        if (!cryptoPositions.some((p) => p.symbol === sym)) {
+          cryptoPositions.push({ symbol: sym } as Position);
+        }
+      } else {
+        delete this.state.recentOrders[sym];
+      }
+    }
+
     for (const pos of cryptoPositions) {
       const plPct = (pos.unrealized_pl / (pos.market_value - pos.unrealized_pl)) * 100;
 
@@ -1785,7 +1810,7 @@ export class MahoragaHarness extends DurableObject<Env> {
       if (!validExisting || Date.now() - validExisting.timestamp > CRYPTO_RESEARCH_TTL_MS) {
         research = await this.researchCrypto(signal.symbol, signal.momentum || 0, signal.sentiment);
         // Respect free-tier rate limits between crypto research calls
-        if (this.state.config.llm_model.includes(":free")) {
+        if (this.state.config.llm_model.includes(":free") || this.state.config.llm_model.includes("/free")) {
           await this.sleep(8_000);
         }
       }
@@ -1927,6 +1952,9 @@ JSON response:
     confidence: number,
     account: Account
   ): Promise<boolean> {
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:executeCryptoBuy',message:'crypto_buy_attempt',data:{symbol,confidence,cash:account.cash,path:'crypto'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
     const sizePct = Math.min(20, this.state.config.position_size_pct_of_cash);
     const positionSize = Math.min(
       account.cash * (sizePct / 100) * confidence,
@@ -1948,6 +1976,7 @@ JSON response:
       });
 
       this.log("Crypto", "buy_executed", { symbol, status: order.status, size: positionSize });
+      this.state.recentOrders[symbol] = Date.now();
       return true;
     } catch (error) {
       this.log("Crypto", "buy_failed", { symbol, error: String(error) });
@@ -2390,7 +2419,7 @@ JSON response:
 
     // Free-tier models have strict rate limits (e.g. 8 RPM on OpenRouter).
     // Use longer delays between calls to avoid hammering the API.
-    const isFreeModel = this.state.config.llm_model.includes(":free");
+    const isFreeModel = this.state.config.llm_model.includes(":free") || this.state.config.llm_model.includes("/free");
     const delayBetweenCalls = isFreeModel ? 8_000 : 500;
 
     // #region agent log
@@ -2667,6 +2696,16 @@ Response format:
 
     const heldSymbols = new Set(positions.map((p) => p.symbol));
 
+    // Also mark recently ordered symbols as held to prevent duplicate buys while orders are pending
+    const RECENT_ORDER_TTL_MS = 5 * 60_000; // 5 minutes
+    for (const [sym, ts] of Object.entries(this.state.recentOrders)) {
+      if (Date.now() - ts < RECENT_ORDER_TTL_MS) {
+        heldSymbols.add(sym);
+      } else {
+        delete this.state.recentOrders[sym];
+      }
+    }
+
     // Check position exits
     for (const pos of positions) {
       if (pos.asset_class === "us_option") continue; // Options handled separately
@@ -2697,10 +2736,16 @@ Response format:
     }
 
     if (positions.length < this.state.config.max_positions && this.state.signalCache.length > 0) {
+      const cryptoSymbolSet = new Set(this.state.config.crypto_symbols || []);
       const researchedBuys = Object.values(this.state.signalResearch)
         .filter((r) => r.verdict === "BUY" && r.confidence >= this.state.config.min_analyst_confidence)
         .filter((r) => !heldSymbols.has(r.symbol))
+        .filter((r) => !isCryptoSymbol(r.symbol, [...cryptoSymbolSet])) // Crypto handled by runCryptoTrading
         .sort((a, b) => b.confidence - a.confidence);
+
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:runAnalyst:2700',message:'analyst_buy_candidates',data:{researchedBuys:researchedBuys.map(r=>({symbol:r.symbol,confidence:r.confidence,isCrypto:r.symbol.includes('/')})),heldSymbols:[...heldSymbols],positionCount:positions.length,maxPositions:this.state.config.max_positions},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       for (const research of researchedBuys.slice(0, 3)) {
         if (positions.length >= this.state.config.max_positions) break;
@@ -2857,6 +2902,10 @@ Response format:
       const orderSymbol = isCrypto ? normalizeCryptoSymbol(symbol) : symbol;
       const timeInForce = isCrypto ? "gtc" : "day";
 
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:executeBuy:2855',message:'executor_buy_attempt',data:{symbol,orderSymbol,isCrypto,confidence,positionSize,cash:account.cash,path:'analyst'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+
       if (!isCrypto) {
         const allowedExchanges = this.state.config.allowed_exchanges ?? ["NYSE", "NASDAQ", "ARCA", "AMEX", "BATS"];
         if (allowedExchanges.length > 0) {
@@ -2886,6 +2935,7 @@ Response format:
       });
 
       this.log("Executor", "buy_executed", { symbol: orderSymbol, isCrypto, status: order.status, size: positionSize });
+      this.state.recentOrders[symbol] = Date.now();
       return true;
     } catch (error) {
       this.log("Executor", "buy_failed", { symbol, error: String(error) });
@@ -3377,7 +3427,7 @@ Response format:
     // Use the cost calculated by the provider (from OpenRouter pricing API or the response itself).
     // If the provider didn't return a cost, log it as unknown.
     const cost = (actualCost !== undefined && actualCost > 0) ? actualCost : 0;
-    const costSource = cost > 0 ? "from-provider" : (model.includes(":free") ? "free" : "unknown");
+    const costSource = cost > 0 ? "from-provider" : (model.includes(":free") || model.includes("/free") ? "free" : "unknown");
 
     console.log(`[LLM Cost] model=${model} tokens=${tokensIn}/${tokensOut} cost=$${cost.toFixed(6)} (${costSource})`);
 

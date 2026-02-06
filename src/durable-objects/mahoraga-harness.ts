@@ -1859,7 +1859,7 @@ JSON response:
 
       const usage = response.usage;
       if (usage) {
-        this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens);
+        this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
       }
 
       const content = response.content || "{}";
@@ -2264,7 +2264,7 @@ JSON response:
 
       const usage = response.usage;
       if (usage) {
-        this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens);
+        this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
       }
 
       const content = response.content || "{}";
@@ -2404,7 +2404,7 @@ Provide a brief risk assessment and recommendation (HOLD, SELL, or ADD). JSON fo
 
       const usage = response.usage;
       if (usage) {
-        this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens);
+        this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
       }
 
       const content = response.content || "{}";
@@ -2548,7 +2548,7 @@ Response format:
 
       const usage = response.usage;
       if (usage) {
-        this.trackLLMCost(this.state.config.llm_analyst_model, usage.prompt_tokens, usage.completion_tokens);
+        this.trackLLMCost(this.state.config.llm_analyst_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
       }
 
       const content = response.content || "{}";
@@ -3315,14 +3315,24 @@ Response format:
     console.log(`[${entry.timestamp}] [${agent}] ${action}`, JSON.stringify(details));
   }
 
-  public trackLLMCost(model: string, tokensIn: number, tokensOut: number): number {
-    const pricing: Record<string, { input: number; output: number }> = {
-      "gpt-4o": { input: 2.5, output: 10 },
-      "gpt-4o-mini": { input: 0.15, output: 0.6 },
-    };
+  public trackLLMCost(model: string, tokensIn: number, tokensOut: number, actualCost?: number): number {
+    let cost: number;
 
-    const rates = pricing[model] ?? pricing["gpt-4o"]!;
-    const cost = (tokensIn * rates.input + tokensOut * rates.output) / 1_000_000;
+    if (actualCost !== undefined) {
+      // Use actual cost from provider (e.g. OpenRouter returns this)
+      cost = actualCost;
+    } else {
+      // Estimate cost from known pricing (fallback for direct OpenAI)
+      const pricing: Record<string, { input: number; output: number }> = {
+        "gpt-4o": { input: 2.5, output: 10 },
+        "gpt-4o-mini": { input: 0.15, output: 0.6 },
+        "gpt-3.5-turbo": { input: 0.5, output: 1.5 },
+      };
+      const rates = pricing[model] ?? pricing["gpt-4o-mini"]!;
+      cost = (tokensIn * rates.input + tokensOut * rates.output) / 1_000_000;
+    }
+
+    console.log(`[LLM Cost] model=${model} tokens=${tokensIn}/${tokensOut} cost=$${cost.toFixed(6)}${actualCost !== undefined ? " (actual)" : " (estimated)"}`);
 
     // Update totals
     this.state.costTracker.total_usd += cost;

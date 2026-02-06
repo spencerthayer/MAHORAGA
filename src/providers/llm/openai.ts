@@ -20,6 +20,8 @@ interface OpenAIResponse {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    /** Actual cost in USD (provided by OpenRouter, not by direct OpenAI) */
+    cost?: number;
   };
 }
 
@@ -70,6 +72,7 @@ export class OpenAIProvider implements LLMProvider {
         prompt_tokens: data.usage.prompt_tokens,
         completion_tokens: data.usage.completion_tokens,
         total_tokens: data.usage.total_tokens,
+        cost: data.usage.cost,
       },
     };
   }

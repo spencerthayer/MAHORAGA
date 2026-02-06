@@ -314,6 +314,8 @@ export interface CompletionResult {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    /** Actual cost in USD from the provider (e.g. OpenRouter). When present, overrides estimated pricing. */
+    cost?: number;
   };
 }
 

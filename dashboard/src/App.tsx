@@ -1145,7 +1145,7 @@ export default function App() {
                         <div className="space-y-2 min-w-[200px]">
                           <div className="hud-label text-hud-primary border-b border-hud-line/50 pb-1">
                             {isCryptoSymbol(symbol, config?.crypto_symbols) && (
-                              <span className="text-hud-warning text-xs">₿</span>
+                              <span className="text-hud-warning text-xs" style={{ marginRight: '8px' }}>₿</span>
                             )}{symbol} DETAILS
                           </div>
                           <div className="space-y-1">
@@ -1197,7 +1197,7 @@ export default function App() {
                         <div className="flex justify-between items-center mb-1">
                           <span className="hud-value-sm">
                             {isCryptoSymbol(symbol, config?.crypto_symbols) && (
-                              <span className="text-hud-warning text-xs">₿</span>
+                              <span className="text-hud-warning text-xs" style={{ marginRight: '8px' }}>₿</span>
                             )}{symbol}
                           </span>
                           <div className="flex items-center gap-2">

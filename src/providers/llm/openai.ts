@@ -31,10 +31,16 @@ interface OpenRouterModel {
     prompt: string; // $ per token (string)
     completion: string; // $ per token (string)
   };
+  supported_parameters?: string[];
 }
 
 interface OpenRouterModelsResponse {
   data: OpenRouterModel[];
+}
+
+interface CachedModelInfo {
+  pricing: { prompt: number; completion: number };
+  supportedParams: Set<string>;
 }
 
 export class OpenAIProvider implements LLMProvider {
@@ -42,9 +48,9 @@ export class OpenAIProvider implements LLMProvider {
   private model: string;
   private baseUrl: string;
   private isOpenRouter: boolean;
-  /** Per-token pricing cached from OpenRouter's /models endpoint: { prompt: $/token, completion: $/token } */
-  private pricingCache: Map<string, { prompt: number; completion: number }> = new Map();
-  private pricingFetchPromise: Promise<void> | null = null;
+  /** Cached model info from OpenRouter's /models endpoint: pricing + supported parameters */
+  private modelCache: Map<string, CachedModelInfo> = new Map();
+  private modelFetchPromise: Promise<void> | null = null;
 
   constructor(config: OpenAIConfig) {
     this.apiKey = config.apiKey;
@@ -54,19 +60,19 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   /**
-   * Fetch and cache model pricing from OpenRouter's /models endpoint.
+   * Fetch and cache model info (pricing + supported_parameters) from OpenRouter's /models endpoint.
    * Only fetches once; subsequent calls return immediately.
    */
-  private async ensurePricing(): Promise<void> {
-    if (!this.isOpenRouter || this.pricingCache.size > 0) return;
+  private async ensureModelInfo(): Promise<void> {
+    if (!this.isOpenRouter || this.modelCache.size > 0) return;
 
     // Deduplicate concurrent fetches
-    if (this.pricingFetchPromise) {
-      await this.pricingFetchPromise;
+    if (this.modelFetchPromise) {
+      await this.modelFetchPromise;
       return;
     }
 
-    this.pricingFetchPromise = (async () => {
+    this.modelFetchPromise = (async () => {
       try {
         const res = await fetch("https://openrouter.ai/api/v1/models", {
           headers: { Authorization: `Bearer ${this.apiKey}` },
@@ -78,18 +84,21 @@ export class OpenAIProvider implements LLMProvider {
               const prompt = parseFloat(model.pricing.prompt);
               const completion = parseFloat(model.pricing.completion);
               if (!isNaN(prompt) && !isNaN(completion)) {
-                this.pricingCache.set(model.id, { prompt, completion });
+                this.modelCache.set(model.id, {
+                  pricing: { prompt, completion },
+                  supportedParams: new Set(model.supported_parameters ?? []),
+                });
               }
             }
           }
-          console.log(`[LLM] Cached pricing for ${this.pricingCache.size} OpenRouter models`);
+          console.log(`[LLM] Cached pricing for ${this.modelCache.size} OpenRouter models`);
         }
       } catch (err) {
-        console.warn("[LLM] Failed to fetch OpenRouter model pricing:", err);
+        console.warn("[LLM] Failed to fetch OpenRouter model info:", err);
       }
     })();
 
-    await this.pricingFetchPromise;
+    await this.modelFetchPromise;
   }
 
   /**
@@ -97,26 +106,43 @@ export class OpenAIProvider implements LLMProvider {
    * Returns undefined if pricing is unavailable.
    */
   private calculateCost(modelId: string, promptTokens: number, completionTokens: number): number | undefined {
-    const pricing = this.pricingCache.get(modelId);
-    if (!pricing) return undefined;
-    return promptTokens * pricing.prompt + completionTokens * pricing.completion;
+    const info = this.modelCache.get(modelId);
+    if (!info) return undefined;
+    return promptTokens * info.pricing.prompt + completionTokens * info.pricing.completion;
+  }
+
+  /**
+   * Check if a model supports a given parameter (e.g. "response_format").
+   * Returns true if we have no data (non-OpenRouter or unknown model) to avoid stripping params unnecessarily.
+   */
+  private modelSupportsParam(modelId: string, param: string): boolean {
+    const info = this.modelCache.get(modelId);
+    if (!info || info.supportedParams.size === 0) return true; // assume supported if unknown
+    return info.supportedParams.has(param);
   }
 
   async complete(params: CompletionParams): Promise<CompletionResult> {
-    // Fetch pricing in the background on first call (non-blocking for subsequent calls)
+    // Fetch model info on first call (non-blocking for subsequent calls)
     if (this.isOpenRouter) {
-      await this.ensurePricing();
+      await this.ensureModelInfo();
     }
 
+    const modelId = params.model ?? this.model;
+
     const body: Record<string, unknown> = {
-      model: params.model ?? this.model,
+      model: modelId,
       messages: params.messages,
       temperature: params.temperature ?? 0.7,
       max_tokens: params.max_tokens ?? 1024,
     };
 
+    // Only include response_format if the model supports it
     if (params.response_format) {
-      body.response_format = params.response_format;
+      if (this.modelSupportsParam(modelId, "response_format")) {
+        body.response_format = params.response_format;
+      } else {
+        console.log(`[LLM] Model ${modelId} does not support response_format, relying on prompt instructions`);
+      }
     }
 
     const maxRetries = 3;
@@ -135,7 +161,6 @@ export class OpenAIProvider implements LLMProvider {
       if (response.ok) {
         const data = (await response.json()) as OpenAIResponse;
         const content = data.choices[0]?.message?.content ?? "";
-        const modelId = (body.model as string) ?? this.model;
 
         // Use OpenRouter's reported cost if > 0, otherwise calculate from cached pricing
         let cost = data.usage.cost && data.usage.cost > 0 ? data.usage.cost : undefined;

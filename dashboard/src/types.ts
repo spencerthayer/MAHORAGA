@@ -113,6 +113,10 @@ export interface OpenRouterModel {
   promptPricePer1M: number
   completionPricePer1M: number
   combinedPricePer1M: number
+  /** Whether this model supports response_format for structured JSON output */
+  supportsResponseFormat: boolean
+  /** Whether this model supports text output (not image-only) */
+  supportsTextOutput: boolean
 }
 
 export interface SignalResearch {

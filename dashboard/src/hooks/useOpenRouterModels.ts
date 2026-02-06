@@ -9,6 +9,10 @@ interface OpenRouterApiModel {
     prompt?: string
     completion?: string
   }
+  supported_parameters?: string[]
+  modality?: {
+    output?: string[]
+  }
 }
 
 interface OpenRouterApiResponse {
@@ -25,6 +29,8 @@ function parseModels(data: OpenRouterApiModel[]): OpenRouterModel[] {
       const completionPerToken = parseFloat(m.pricing?.completion || '0') || 0
       const promptPricePer1M = promptPerToken * 1_000_000
       const completionPricePer1M = completionPerToken * 1_000_000
+      const supportedParams = m.supported_parameters ?? []
+      const outputModalities = m.modality?.output ?? ['text']
 
       return {
         id: m.id,
@@ -33,6 +39,8 @@ function parseModels(data: OpenRouterApiModel[]): OpenRouterModel[] {
         promptPricePer1M: Math.round(promptPricePer1M * 10000) / 10000,
         completionPricePer1M: Math.round(completionPricePer1M * 10000) / 10000,
         combinedPricePer1M: Math.round((promptPricePer1M + completionPricePer1M) * 10000) / 10000,
+        supportsResponseFormat: supportedParams.includes('response_format') || supportedParams.includes('structured_outputs'),
+        supportsTextOutput: outputModalities.includes('text'),
       }
     })
     .sort((a, b) => a.combinedPricePer1M - b.combinedPricePer1M)

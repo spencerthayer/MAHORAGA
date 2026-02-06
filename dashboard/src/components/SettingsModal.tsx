@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { Config } from '../types'
 import { Panel } from './Panel'
 import { ModelPicker } from './ModelPicker'
@@ -15,6 +15,14 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
   const [saving, setSaving] = useState(false)
   const [apiToken, setApiToken] = useState(localStorage.getItem('mahoraga_api_token') || '')
   const { models: openRouterModels, loading: modelsLoading, error: modelsError } = useOpenRouterModels(localConfig.llm_provider === 'openrouter')
+
+  // Filter to only show models compatible with our system:
+  // - Must support text output (not image-only models)
+  // - Must support response_format for reliable JSON output
+  const compatibleModels = useMemo(
+    () => openRouterModels.filter((m) => m.supportsTextOutput && m.supportsResponseFormat),
+    [openRouterModels]
+  )
 
   // Note: We intentionally do NOT sync localConfig with the config prop after initial mount.
   // This prevents the parent's polling (every 5s) from overwriting user's unsaved changes.
@@ -221,7 +229,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
             {localConfig.llm_provider === 'openrouter' ? (
               <div className="grid grid-cols-2 gap-4">
                 <ModelPicker
-                  models={openRouterModels}
+                  models={compatibleModels}
                   loading={modelsLoading}
                   error={modelsError}
                   value={localConfig.llm_model}
@@ -229,7 +237,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                   label="Research Model (cheap)"
                 />
                 <ModelPicker
-                  models={openRouterModels}
+                  models={compatibleModels}
                   loading={modelsLoading}
                   error={modelsError}
                   value={localConfig.llm_analyst_model || 'openai/gpt-4o'}

@@ -195,7 +195,7 @@ export default function App() {
   const positions = status?.positions || []
   const signals = status?.signals || []
   const logs = status?.logs || []
-  const costs = status?.costs || { total_usd: 0, calls: 0, tokens_in: 0, tokens_out: 0 }
+  const costs = status?.costs || { total_usd: 0, calls: 0, tokens_in: 0, tokens_out: 0, by_model: {} }
   const config = status?.config
   const isMarketOpen = status?.clock?.is_open ?? false
 
@@ -491,16 +491,51 @@ export default function App() {
 
           <div className="col-span-4 md:col-span-8 lg:col-span-4">
             <Panel title="LLM COSTS" className="h-full">
-              <div className="grid grid-cols-2 gap-4">
-                <Metric label="TOTAL SPENT" value={`$${costs.total_usd.toFixed(4)}`} size="lg" />
-                <Metric label="API CALLS" value={costs.calls.toString()} size="lg" />
-                <MetricInline label="TOKENS IN" value={costs.tokens_in.toLocaleString()} />
-                <MetricInline label="TOKENS OUT" value={costs.tokens_out.toLocaleString()} />
-                <MetricInline 
-                  label="AVG COST/CALL" 
-                  value={costs.calls > 0 ? `$${(costs.total_usd / costs.calls).toFixed(6)}` : '$0'} 
-                />
-                <MetricInline label="MODEL" value={config?.llm_model || 'gpt-4o-mini'} />
+              <div className="space-y-3">
+                {/* Totals */}
+                <div className="grid grid-cols-2 gap-4">
+                  <Metric label="TOTAL SPENT" value={`$${costs.total_usd.toFixed(4)}`} size="lg" />
+                  <Metric label="API CALLS" value={costs.calls.toString()} size="lg" />
+                  <MetricInline label="TOKENS IN" value={costs.tokens_in.toLocaleString()} />
+                  <MetricInline label="TOKENS OUT" value={costs.tokens_out.toLocaleString()} />
+                  <MetricInline 
+                    label="AVG COST/CALL" 
+                    value={costs.calls > 0 ? `$${(costs.total_usd / costs.calls).toFixed(6)}` : '$0'} 
+                  />
+                </div>
+                {/* Per-model breakdown */}
+                <div className="border-t border-hud-line/30 pt-2 space-y-2">
+                  {(() => {
+                    const researchModel = config?.llm_model || 'gpt-4o-mini'
+                    const analystModel = config?.llm_analyst_model || 'gpt-4o'
+                    const byModel = costs.by_model || {}
+                    const researchCost = byModel[researchModel]
+                    const analystCost = byModel[analystModel]
+                    return (
+                      <>
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-[10px]">
+                          <span className="hud-label text-[9px]">MODEL</span>
+                          <span className="hud-label text-[9px] text-right">CALLS</span>
+                          <span className="hud-label text-[9px] text-right">COST</span>
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-[10px]">
+                          <span className="text-hud-text truncate" title={researchModel}>
+                            <span className="text-hud-text-dim">RES</span> {researchModel}
+                          </span>
+                          <span className="text-hud-text-dim text-right font-mono">{researchCost?.calls ?? 0}</span>
+                          <span className="text-hud-text text-right font-mono">${(researchCost?.total_usd ?? 0).toFixed(4)}</span>
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-[10px]">
+                          <span className="text-hud-text truncate" title={analystModel}>
+                            <span className="text-hud-text-dim">ANA</span> {analystModel}
+                          </span>
+                          <span className="text-hud-text-dim text-right font-mono">{analystCost?.calls ?? 0}</span>
+                          <span className="text-hud-text text-right font-mono">${(analystCost?.total_usd ?? 0).toFixed(4)}</span>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
               </div>
             </Panel>
           </div>

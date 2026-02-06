@@ -1,27 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  --color-hud-bg: #0a0c0e;
-  --color-hud-bg-panel: #0d1012;
+  --color-hud-bg: #101418;
+  --color-hud-bg-panel: #161b21;
   
-  --color-hud-primary: #7a9ba8;
-  --color-hud-dim: #3a4a52;
-  --color-hud-line: rgba(122, 155, 168, 0.15);
-  --color-hud-border: rgba(122, 155, 168, 0.2);
+  --color-hud-primary: #8fb3c2;
+  --color-hud-dim: #4e6570;
+  --color-hud-line: rgba(143, 179, 194, 0.22);
+  --color-hud-border: rgba(143, 179, 194, 0.3);
   
-  --color-hud-text: #7a9ba8;
-  --color-hud-text-dim: #4a5a62;
-  --color-hud-text-bright: #c8dce4;
+  --color-hud-text: #93b0bc;
+  --color-hud-text-dim: #647880;
+  --color-hud-text-bright: #daeaf0;
   
-  --color-hud-success: #4a9868;
-  --color-hud-warning: #b89848;
-  --color-hud-error: #b84848;
-  --color-hud-purple: #8a6ab8;
-  --color-hud-cyan: #5a9ab8;
-  --color-hud-blue: #5a7ab8;
-  --color-hud-green: #4a9868;
-  --color-hud-yellow: #b89848;
-  --color-hud-red: #b84848;
+  --color-hud-success: #5cb87e;
+  --color-hud-warning: #d4b058;
+  --color-hud-error: #d45858;
+  --color-hud-purple: #a07ed4;
+  --color-hud-cyan: #6cb4d4;
+  --color-hud-blue: #6c92d4;
+  --color-hud-green: #5cb87e;
+  --color-hud-yellow: #d4b058;
+  --color-hud-red: #d45858;
   
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
 }

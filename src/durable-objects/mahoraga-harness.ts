@@ -155,11 +155,19 @@ interface LogEntry {
   [key: string]: unknown;
 }
 
+interface ModelCost {
+  total_usd: number;
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+}
+
 interface CostTracker {
   total_usd: number;
   calls: number;
   tokens_in: number;
   tokens_out: number;
+  by_model: Record<string, ModelCost>;
 }
 
 interface ResearchResult {
@@ -304,7 +312,7 @@ const DEFAULT_STATE: AgentState = {
   positionEntries: {},
   socialHistory: {},
   logs: [],
-  costTracker: { total_usd: 0, calls: 0, tokens_in: 0, tokens_out: 0 },
+  costTracker: { total_usd: 0, calls: 0, tokens_in: 0, tokens_out: 0, by_model: {} },
   lastDataGatherRun: 0,
   lastAnalystRun: 0,
   lastResearchRun: 0,
@@ -849,14 +857,10 @@ export class MahoragaHarness extends DurableObject<Env> {
   }
 
   private initializeLLM() {
-    // Env vars take precedence so that changing .dev.vars or wrangler secrets
-    // is immediately reflected without needing to clear stored state.
-    const provider = this.env.LLM_PROVIDER || this.state.config.llm_provider || "openai-raw";
-    const model = this.env.LLM_MODEL || this.state.config.llm_model || "gpt-4o-mini";
-
-    // Keep config in sync with the effective values so the dashboard reflects them
-    this.state.config.llm_provider = provider;
-    this.state.config.llm_model = model;
+    // Dashboard config takes precedence, env vars are fallback defaults.
+    const provider = this.state.config.llm_provider || this.env.LLM_PROVIDER || "openai-raw";
+    const model = this.state.config.llm_model || this.env.LLM_MODEL || "gpt-4o-mini";
+    const analystModel = this.state.config.llm_analyst_model || (this.env as unknown as Record<string, string>)["LLM_ANALYST_MODEL"] || "gpt-4o";
 
     const effectiveEnv: Env = {
       ...this.env,
@@ -866,7 +870,7 @@ export class MahoragaHarness extends DurableObject<Env> {
 
     this._llm = createLLMProvider(effectiveEnv);
     if (this._llm) {
-      console.log(`[MahoragaHarness] LLM Provider initialized: ${provider} (${model})`);
+      console.log(`[MahoragaHarness] LLM initialized: ${provider} (research: ${model}, analyst: ${analystModel})`);
     } else {
       console.log("[MahoragaHarness] WARNING: No valid LLM provider configured");
     }
@@ -1146,7 +1150,7 @@ export class MahoragaHarness extends DurableObject<Env> {
     this.state.config = { ...this.state.config, ...body };
     this.initializeLLM();
     await this.persist();
-    return this.jsonResponse({ ok: true, config: this.state.config });
+    return this.jsonResponse({ ok: true, data: this.state.config });
   }
 
   private async handleEnable(): Promise<Response> {
@@ -3315,10 +3319,23 @@ Response format:
     const rates = pricing[model] ?? pricing["gpt-4o"]!;
     const cost = (tokensIn * rates.input + tokensOut * rates.output) / 1_000_000;
 
+    // Update totals
     this.state.costTracker.total_usd += cost;
     this.state.costTracker.calls++;
     this.state.costTracker.tokens_in += tokensIn;
     this.state.costTracker.tokens_out += tokensOut;
+
+    // Update per-model breakdown (migrate old state that lacks by_model)
+    if (!this.state.costTracker.by_model) {
+      this.state.costTracker.by_model = {};
+    }
+    const entry = this.state.costTracker.by_model[model] ??= {
+      total_usd: 0, calls: 0, tokens_in: 0, tokens_out: 0,
+    };
+    entry.total_usd += cost;
+    entry.calls++;
+    entry.tokens_in += tokensIn;
+    entry.tokens_out += tokensOut;
 
     return cost;
   }

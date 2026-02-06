@@ -43,11 +43,19 @@ export interface LogEntry {
   [key: string]: unknown
 }
 
+export interface ModelCost {
+  total_usd: number
+  calls: number
+  tokens_in: number
+  tokens_out: number
+}
+
 export interface CostTracker {
   total_usd: number
   calls: number
   tokens_in: number
   tokens_out: number
+  by_model?: Record<string, ModelCost>
 }
 
 export interface Config {

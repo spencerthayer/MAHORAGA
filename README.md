@@ -446,6 +446,75 @@ mahoraga/
 └── migrations/                 # D1 database migrations
 ```
 
+## Dashboard Metrics & P&L Calculations
+
+The Account panel displays several financial metrics. Some are passed through directly from the Alpaca API, while others are derived in the dashboard.
+
+### Data Sources
+
+| Metric | Source | Calculated By |
+|--------|--------|---------------|
+| **Equity** | Alpaca `/v2/account` → `equity` | Alpaca (direct) |
+| **Cash** | Alpaca `/v2/account` → `cash` | Alpaca (direct) |
+| **Buying Power** | Alpaca `/v2/account` → `buying_power` | Alpaca (direct) |
+| **Last Equity** | Alpaca `/v2/account` → `last_equity` | Alpaca (direct) |
+| **Starting Equity** | Alpaca `/v2/account/portfolio/history` → `base_value` | Auto-captured on first run |
+| **Unrealized P&L** | Alpaca `/v2/positions` → sum of `unrealized_pl` | Dashboard |
+| **Daily P&L** | Derived from equity and last_equity | Dashboard |
+| **Total P&L** | Derived from equity and starting_equity | Dashboard |
+| **Realized P&L** | Derived from total and unrealized P&L | Dashboard |
+
+### Starting Equity
+
+The `starting_equity` value is **automatically derived from Alpaca** on first run — it is not hardcoded. The harness calls Alpaca's Portfolio History API and reads the `base_value` field, which represents the account's initial funded value (e.g., $100,000 for a standard paper account).
+
+Once captured, the value is persisted in the Durable Object config. To re-derive it from Alpaca (e.g., after a reset), use the **Reset** button next to "Starting Equity" in the Settings modal — this clears the persisted value so the next status poll re-fetches it.
+
+### Formulas
+
+**Daily P&L** — change since previous trading day's close:
+
+$$\text{Daily P\&L} = \text{equity} - \text{last\_equity}$$
+
+$$\text{Daily P\&L \%} = \frac{\text{equity} - \text{last\_equity}}{\text{last\_equity}} \times 100$$
+
+**Total P&L** — all-time change since account inception:
+
+$$\text{Total P\&L} = \text{equity} - \text{starting\_equity}$$
+
+$$\text{Total P\&L \%} = \frac{\text{equity} - \text{starting\_equity}}{\text{starting\_equity}} \times 100$$
+
+**Unrealized P&L** — sum of gains/losses on open positions:
+
+$$\text{Unrealized P\&L} = \sum_{i=1}^{n} \text{position}_i.\text{unrealized\_pl}$$
+
+**Realized P&L** — derived from the accounting identity $\text{Total} = \text{Realized} + \text{Unrealized}$:
+
+$$\text{Realized P\&L} = \text{Total P\&L} - \text{Unrealized P\&L}$$
+
+### Example
+
+For an account that started at \$100,000 with current equity of \$106,035:
+
+| Metric | Formula | Value |
+|--------|---------|-------|
+| Starting Equity | Alpaca `base_value` | \$100,000.00 |
+| Last Equity | Alpaca `last_equity` (prev close) | \$100,000.00 |
+| Equity | Alpaca `equity` | \$106,035.52 |
+| Daily P&L | $106{,}035.52 - 100{,}000$ | **\$6,035.52 (+6.04%)** |
+| Total P&L | $106{,}035.52 - 100{,}000$ | **\$6,035.52 (+6.04%)** |
+| Unrealized P&L | $\sum \text{positions}$ | **\$6,278.21** |
+| Realized P&L | $6{,}035.52 - 6{,}278.21$ | **-\$242.69** |
+
+> **Note:** Daily and Total P&L are identical on day 1 (when `last_equity` equals `starting_equity`). They diverge from day 2 onward as `last_equity` updates to each day's closing equity while `starting_equity` remains fixed.
+
+### Cash & Buying Power
+
+**Cash** and **Buying Power** come directly from Alpaca's account API — the dashboard does not calculate these.
+
+- **Cash** — uninvested dollars in the account (starting cash minus cost of purchases plus proceeds from sales)
+- **Buying Power** — total amount available to open new positions, factoring in RegT margin. For a margin-eligible account this is typically ~2× settled cash, reduced by the margin requirements of existing positions
+
 ## Dashboard Theming
 
 The dashboard uses a **[Synthwave '84](https://github.com/robb0wen/synthwave-vscode)** color palette with neon glow effects, defined as CSS custom properties in `dashboard/src/index.css`.

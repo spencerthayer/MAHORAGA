@@ -98,6 +98,15 @@ export interface Config {
   ticker_blacklist?: string[]
 }
 
+export interface OpenRouterModel {
+  id: string
+  name: string
+  contextLength: number
+  promptPricePer1M: number
+  completionPricePer1M: number
+  combinedPricePer1M: number
+}
+
 export interface SignalResearch {
   verdict: 'BUY' | 'SKIP' | 'WAIT'
   confidence: number

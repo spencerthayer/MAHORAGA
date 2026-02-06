@@ -1775,10 +1775,6 @@ export class MahoragaHarness extends DurableObject<Env> {
       const existingResearch = this.state.signalResearch[signal.symbol];
       const CRYPTO_RESEARCH_TTL_MS = 300_000;
 
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:runCryptoTrading:cacheCheck',message:'Crypto cache state',data:{symbol:signal.symbol,hasExistingResearch:!!existingResearch,existingVerdict:existingResearch?.verdict,existingConfidence:existingResearch?.confidence,cacheAgeMs:existingResearch?Date.now()-existingResearch.timestamp:null,ttlExpired:existingResearch?Date.now()-existingResearch.timestamp>CRYPTO_RESEARCH_TTL_MS:true,willCallResearchCrypto:!existingResearch||Date.now()-existingResearch.timestamp>CRYPTO_RESEARCH_TTL_MS},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion
-
       // Evict poisoned cache entries (undefined verdict from malformed LLM responses)
       const validExisting = existingResearch?.verdict ? existingResearch : null;
       if (existingResearch && !existingResearch.verdict) {
@@ -1791,9 +1787,6 @@ export class MahoragaHarness extends DurableObject<Env> {
       }
 
       if (!research || research.verdict !== "BUY") {
-        // #region agent log
-        fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:runCryptoTrading:skip',message:'Crypto skip decision',data:{symbol:signal.symbol,researchNull:research===null,researchVerdict:research?.verdict,researchVerdictType:typeof research?.verdict,usedCache:!!existingResearch&&Date.now()-existingResearch.timestamp<=CRYPTO_RESEARCH_TTL_MS},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4-H5'})}).catch(()=>{});
-        // #endregion
         this.log("Crypto", "research_skip", {
           symbol: signal.symbol,
           verdict: research?.verdict || "NO_RESEARCH",
@@ -1865,7 +1858,7 @@ JSON response:
           },
           { role: "user", content: prompt },
         ],
-        max_tokens: 250,
+        max_tokens: 500,
         temperature: 0.3,
         response_format: { type: "json_object" },
       });
@@ -1876,9 +1869,6 @@ JSON response:
       }
 
       const content = response.content || "{}";
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchCrypto',message:'Crypto LLM raw response',data:{symbol,contentLength:content.length,contentPreview:content.slice(0,300),maxTokensHit:response.usage?.completion_tokens===250,completionTokens:response.usage?.completion_tokens},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H3'})}).catch(()=>{});
-      // #endregion
       const analysis = JSON.parse(content.replace(/```json\n?|```/g, "").trim()) as {
         verdict: "BUY" | "SKIP" | "WAIT";
         confidence: number;
@@ -1887,10 +1877,6 @@ JSON response:
         red_flags: string[];
         catalysts: string[];
       };
-
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchCrypto:parsed',message:'Crypto parsed analysis',data:{symbol,verdict:analysis.verdict,confidence:analysis.confidence,quality:analysis.entry_quality,hasVerdict:analysis.verdict!==undefined,allKeys:Object.keys(analysis)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2-H3'})}).catch(()=>{});
-      // #endregion
 
       // Validate required fields - reject malformed LLM responses
       const validVerdicts = ["BUY", "SKIP", "WAIT"];
@@ -1926,9 +1912,6 @@ JSON response:
 
       return result;
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchCrypto:error',message:'Crypto research error',data:{symbol,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
       this.log("Crypto", "research_error", { symbol, error: String(error) });
       return null;
     }
@@ -2296,7 +2279,7 @@ JSON response:
           },
           { role: "user", content: prompt },
         ],
-        max_tokens: 250,
+        max_tokens: 500,
         temperature: 0.3,
         response_format: { type: "json_object" },
       });
@@ -2307,9 +2290,6 @@ JSON response:
       }
 
       const content = response.content || "{}";
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignal',message:'LLM raw response',data:{symbol,contentLength:content.length,contentPreview:content.slice(0,300),maxTokensHit:response.usage?.completion_tokens===250,completionTokens:response.usage?.completion_tokens},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H2'})}).catch(()=>{});
-      // #endregion
       const analysis = JSON.parse(content.replace(/```json\n?|```/g, "").trim()) as {
         verdict: "BUY" | "SKIP" | "WAIT";
         confidence: number;
@@ -2318,10 +2298,6 @@ JSON response:
         red_flags: string[];
         catalysts: string[];
       };
-
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignal:parsed',message:'Parsed analysis fields',data:{symbol,verdict:analysis.verdict,confidence:analysis.confidence,quality:analysis.entry_quality,hasVerdict:analysis.verdict!==undefined,hasConfidence:analysis.confidence!==undefined,allKeys:Object.keys(analysis)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2-H4'})}).catch(()=>{});
-      // #endregion
 
       // Validate required fields - reject malformed LLM responses
       const validVerdicts = ["BUY", "SKIP", "WAIT"];
@@ -2371,9 +2347,6 @@ JSON response:
 
       return result;
     } catch (error) {
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignal:error',message:'ResearchSignal error',data:{symbol,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1-H3'})}).catch(()=>{});
-      // #endregion
       this.log("SignalResearch", "error", { symbol, message: String(error) });
       return null;
     }
@@ -3378,23 +3351,12 @@ Response format:
   }
 
   public trackLLMCost(model: string, tokensIn: number, tokensOut: number, actualCost?: number): number {
-    let cost: number;
+    // Use the cost calculated by the provider (from OpenRouter pricing API or the response itself).
+    // If the provider didn't return a cost, log it as unknown.
+    const cost = (actualCost !== undefined && actualCost > 0) ? actualCost : 0;
+    const costSource = cost > 0 ? "from-provider" : (model.includes(":free") ? "free" : "unknown");
 
-    if (actualCost !== undefined) {
-      // Use actual cost from provider (e.g. OpenRouter returns this)
-      cost = actualCost;
-    } else {
-      // Estimate cost from known pricing (fallback for direct OpenAI)
-      const pricing: Record<string, { input: number; output: number }> = {
-        "gpt-4o": { input: 2.5, output: 10 },
-        "gpt-4o-mini": { input: 0.15, output: 0.6 },
-        "gpt-3.5-turbo": { input: 0.5, output: 1.5 },
-      };
-      const rates = pricing[model] ?? pricing["gpt-4o-mini"]!;
-      cost = (tokensIn * rates.input + tokensOut * rates.output) / 1_000_000;
-    }
-
-    console.log(`[LLM Cost] model=${model} tokens=${tokensIn}/${tokensOut} cost=$${cost.toFixed(6)}${actualCost !== undefined ? " (actual)" : " (estimated)"}`);
+    console.log(`[LLM Cost] model=${model} tokens=${tokensIn}/${tokensOut} cost=$${cost.toFixed(6)} (${costSource})`);
 
     // Update totals
     this.state.costTracker.total_usd += cost;

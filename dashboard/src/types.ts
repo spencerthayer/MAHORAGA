@@ -55,9 +55,16 @@ export interface SymbolDetail {
 }
 
 export interface Clock {
+  timestamp: string
   is_open: boolean
   next_open: string
   next_close: string
+}
+
+export interface MarketSchedule {
+  date: string
+  open: string   // e.g. "09:30" in ET
+  close: string  // e.g. "16:00" in ET
 }
 
 export interface Signal {
@@ -269,4 +276,6 @@ export interface Status {
   premarketPlan?: PremarketPlan | null
   stalenessAnalysis?: Record<string, StalenessAnalysis>
   overnightActivity?: OvernightActivity
+  displayTimezone?: string
+  marketSchedule?: MarketSchedule | null
 }

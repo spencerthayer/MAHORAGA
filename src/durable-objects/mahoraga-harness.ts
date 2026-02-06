@@ -304,7 +304,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   options_stop_loss_pct: 50,
   options_take_profit_pct: 100,
   crypto_enabled: false,
-  crypto_symbols: ["BTC/USD", "ETH/USD", "SOL/USD"],
+  crypto_symbols: ["BTC/USD", "ETH/USD", "SOL/USD", "SMX/USD"],
   crypto_momentum_threshold: 2.0,
   crypto_max_position_value: 1000,
   crypto_take_profit_pct: 10,
@@ -1127,12 +1127,20 @@ export class MahoragaHarness extends DurableObject<Env> {
     let account: Account | null = null;
     let positions: Position[] = [];
     let clock: MarketClock | null = null;
+    let marketSchedule: { date: string; open: string; close: string } | null = null;
 
     try {
-      [account, positions, clock] = await Promise.all([
+      // Get today's date in ET (market timezone) for calendar lookup
+      const etDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+      [account, positions, clock, marketSchedule] = await Promise.all([
         alpaca.trading.getAccount(),
         alpaca.trading.getPositions(),
         alpaca.trading.getClock(),
+        alpaca.trading.getCalendar(etDateStr, etDateStr).then((cal) => {
+          const day = cal[0];
+          return day ? { date: day.date, open: day.open, close: day.close } : null;
+        }).catch(() => null),
       ]);
 
       for (const pos of positions || []) {
@@ -1179,6 +1187,8 @@ export class MahoragaHarness extends DurableObject<Env> {
         twitterConfirmations: this.state.twitterConfirmations,
         premarketPlan: this.state.premarketPlan,
         stalenessAnalysis: this.state.stalenessAnalysis,
+        displayTimezone: this.env.DISPLAY_TIMEZONE || "America/New_York",
+        marketSchedule,
       },
     });
   }

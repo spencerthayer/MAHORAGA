@@ -446,48 +446,66 @@ export default function App() {
     return portfolioHistory.map(s => s.equity)
   }, [portfolioHistory])
 
+  // Use backend-provided timezone (falls back to ET if not set)
+  const displayTimezone = status?.displayTimezone || 'America/New_York'
+
   const portfolioChartLabels = useMemo(() => {
     return portfolioHistory.map(s => {
       const date = new Date(s.timestamp)
       if (portfolioPeriod === '1D') {
-        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: displayTimezone })
       }
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: displayTimezone })
     })
-  }, [portfolioHistory, portfolioPeriod])
+  }, [portfolioHistory, portfolioPeriod, displayTimezone])
 
   const { marketMarkers, marketHoursZone } = useMemo(() => {
     if (portfolioPeriod !== '1D' || portfolioHistory.length === 0) {
       return { marketMarkers: undefined, marketHoursZone: undefined }
     }
-    
+
+    // Use dynamic market schedule from Alpaca Calendar API (falls back to default NYSE hours)
+    const schedule = status?.marketSchedule
+    const marketOpenET = schedule?.open || '09:30'   // e.g. "09:30"
+    const marketCloseET = schedule?.close || '16:00'  // e.g. "16:00"
+
+    // Convert "HH:MM" to minutes-since-midnight for comparison
+    const toMinutes = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+    const openMinutes = toMinutes(marketOpenET)
+    const closeMinutes = toMinutes(marketCloseET)
+
+    // Format timestamps in Eastern Time (market timezone) for accurate comparison
+    const etFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    })
+
     const markers: { index: number; label: string; color?: string }[] = []
     let openIndex = -1
     let closeIndex = -1
-    
+
     portfolioHistory.forEach((s, i) => {
-      const date = new Date(s.timestamp)
-      const hours = date.getHours()
-      const minutes = date.getMinutes()
-      
-      if (hours === 9 && minutes >= 30 && minutes < 45 && openIndex === -1) {
+      const etTime = etFormatter.format(new Date(s.timestamp))
+      const etMinutes = toMinutes(etTime)
+
+      if (etMinutes >= openMinutes && etMinutes < openMinutes + 15 && openIndex === -1) {
         openIndex = i
         markers.push({ index: i, label: 'OPEN', color: 'var(--color-hud-success)' })
-      } else if (hours === 16 && minutes === 0 && closeIndex === -1) {
+      } else if (etMinutes >= closeMinutes && etMinutes < closeMinutes + 15 && closeIndex === -1) {
         closeIndex = i
         markers.push({ index: i, label: 'CLOSE', color: 'var(--color-hud-error)' })
       }
     })
-    
-    const zone = openIndex >= 0 && closeIndex >= 0 
-      ? { openIndex, closeIndex } 
+
+    const zone = openIndex >= 0 && closeIndex >= 0
+      ? { openIndex, closeIndex }
       : undefined
-    
-    return { 
+
+    return {
       marketMarkers: markers.length > 0 ? markers : undefined,
       marketHoursZone: zone
     }
-  }, [portfolioHistory, portfolioPeriod])
+  }, [portfolioHistory, portfolioPeriod, status?.marketSchedule])
 
   // Normalize position price histories to % change for stacked comparison view
   const normalizedPositionSeries = useMemo(() => {
@@ -600,7 +618,7 @@ export default function App() {
               [CONFIG]
             </button>
             <span className="hud-value-sm font-mono">
-              {time.toLocaleTimeString('en-US', { hour12: false })}
+              {time.toLocaleTimeString('en-US', { hour12: false, timeZone: displayTimezone })}
             </span>
           </div>
         </header>
@@ -967,7 +985,7 @@ export default function App() {
                       className="flex items-start gap-2 py-1 border-b border-hud-line/10"
                     >
                       <span className="text-hud-text-dim shrink-0 hidden sm:inline w-[52px]">
-                        {new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false })}
+                        {new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false, timeZone: displayTimezone })}
                       </span>
                       <span className={clsx('shrink-0 w-[72px] text-right', getAgentColor(log.agent))}>
                         {log.agent}
@@ -1026,7 +1044,7 @@ export default function App() {
                             <div className="flex justify-between">
                               <span className="text-hud-text-dim">Analyzed</span>
                               <span className="text-hud-text">
-                                {new Date(research.timestamp).toLocaleTimeString('en-US', { hour12: false })}
+                                {new Date(research.timestamp).toLocaleTimeString('en-US', { hour12: false, timeZone: displayTimezone })}
                               </span>
                             </div>
                           </div>

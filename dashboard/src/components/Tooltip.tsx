@@ -178,7 +178,7 @@ export function Tooltip({
       <div
         ref={triggerRef}
         {...triggerProps}
-        className="inline-block"
+        className="block"
       >
         {children}
       </div>

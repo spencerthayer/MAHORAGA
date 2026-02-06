@@ -287,6 +287,59 @@ npx wrangler secret put LLM_MODEL         # Set to "anthropic/claude-sonnet-4"
 npx wrangler secret put ANTHROPIC_API_KEY # Your Anthropic API key
 ```
 
+## Sentiment Analysis
+
+MAHORAGA gathers social sentiment from multiple sources in parallel. The core pipeline requires **no API keys** — StockTwits and Reddit are public APIs.
+
+### Sources
+
+| Source | API Key Required | Role | Weight |
+|--------|-----------------|------|--------|
+| **StockTwits** | No (public API) | Primary signal — uses native Bullish/Bearish labels | 0.85 |
+| **Reddit** | No (public API) | Primary signal — keyword-based sentiment from 4 subreddits | 0.6–0.9 per sub |
+| **Twitter/X** | Yes (`TWITTER_BEARER_TOKEN`) | Optional confirmation only — boosts existing signals | 0.90–0.95 |
+| **SEC Filings** | No (public API) | Filing-type-based sentiment (8-K, 10-K, etc.) | — |
+| **Crypto Momentum** | No (uses Alpaca key) | Price-momentum-based sentiment for crypto assets | — |
+
+### How It Works
+
+1. **Gather** — `runDataGatherers()` fetches StockTwits trending symbols, Reddit hot posts (r/wallstreetbets, r/stocks, r/investing, r/options), SEC filings, and crypto momentum in parallel
+2. **Score** — Each source applies weighting: time decay (exponential with 120-min half-life for Reddit), engagement multipliers (upvotes/comments), flair bonuses (DD posts get 1.5x, memes get 0.4x), and source-specific weights
+3. **Filter** — Signals below `min_sentiment_score` (default 0.3) are dropped. StockTwits requires minimum 5 messages per symbol; Reddit requires minimum 2 mentions
+4. **Confirm** (optional) — If `TWITTER_BEARER_TOKEN` is set, signals with sentiment >= 0.3 are checked against recent tweets with actionable keywords (unusual flow, sweep, whale, breaking, upgrade/downgrade). Matching Twitter sentiment boosts signal confidence
+5. **Research** — Surviving signals are sent to the LLM for deep analysis and final BUY/SKIP/HOLD verdict
+
+### Twitter Setup (Optional)
+
+Twitter is **not required** for the sentiment pipeline — it only confirms signals that already passed the threshold. To enable it:
+
+1. Create a developer account at [developer.x.com](https://developer.x.com/)
+2. Generate a Bearer Token
+3. Set the secret: `npx wrangler secret put TWITTER_BEARER_TOKEN`
+
+Rate-limited to ~200 reads/day (~$1–2/day). Results are cached for 5 minutes.
+
+## Discord Notifications
+
+Set `DISCORD_WEBHOOK_URL` to receive real-time trade alerts as rich embeds in a Discord channel. This is **optional** — if not set, notifications are silently skipped.
+
+### What Gets Sent
+
+| Type | Trigger | Content |
+|------|---------|---------|
+| **Signal alert** | High sentiment detected for a symbol | Ticker, sentiment %, sources, "researching..." status |
+| **Research verdict** | LLM returns a BUY verdict | Ticker, verdict (BUY/SKIP/HOLD), confidence %, entry quality, reasoning (truncated to 300 chars), catalysts, red flags |
+
+Notifications are **rate-limited to one per symbol every 30 minutes** to prevent spam.
+
+### Setup
+
+1. In Discord: Channel Settings → Integrations → Webhooks → **New Webhook**
+2. Copy the webhook URL
+3. Set the secret: `npx wrangler secret put DISCORD_WEBHOOK_URL`
+
+All embeds include a footer: *"MAHORAGA • Not financial advice • DYOR"*
+
 ## API Endpoints
 
 | Endpoint | Description |

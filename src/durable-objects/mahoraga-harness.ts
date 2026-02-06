@@ -2393,12 +2393,26 @@ JSON response:
     const isFreeModel = this.state.config.llm_model.includes(":free");
     const delayBetweenCalls = isFreeModel ? 8_000 : 500;
 
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchTopSignals',message:'loop_config',data:{model:this.state.config.llm_model,isFreeModel,delayBetweenCalls,signalCount:aggregated.size},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
+    // #endregion
+
     const results: ResearchResult[] = [];
     for (const [symbol, data] of aggregated) {
+      // #region agent log
+      const callStart = Date.now();
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchTopSignals',message:'call_start',data:{symbol,callStart},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H4'})}).catch(()=>{});
+      // #endregion
       const analysis = await this.researchSignal(symbol, data.sentiment, data.sources);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchTopSignals',message:'call_done',data:{symbol,durationMs:Date.now()-callStart,hasResult:!!analysis,verdict:analysis?.verdict},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H3'})}).catch(()=>{});
+      // #endregion
       if (analysis) {
         results.push(analysis);
       }
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchTopSignals',message:'sleeping',data:{symbol,delayBetweenCalls},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       await this.sleep(delayBetweenCalls);
     }
 

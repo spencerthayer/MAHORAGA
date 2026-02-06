@@ -19,8 +19,14 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
   // Filter to only show models compatible with our system:
   // - Must support text output (not image-only models)
   // - Must support response_format for reliable JSON output
+  // - Must have at least 4096 context tokens (our prompts + max_tokens need ~2k minimum)
+  const MIN_CONTEXT_LENGTH = 4096
   const compatibleModels = useMemo(
-    () => openRouterModels.filter((m) => m.supportsTextOutput && m.supportsResponseFormat),
+    () => openRouterModels.filter((m) =>
+      m.supportsTextOutput &&
+      m.supportsResponseFormat &&
+      m.contextLength >= MIN_CONTEXT_LENGTH
+    ),
     [openRouterModels]
   )
 

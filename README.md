@@ -245,7 +245,9 @@ OPENAI_API_KEY=sk-or-v1-your-openrouter-key
 
 Models use the `provider/model` format (e.g. `openai/gpt-5-mini`, `anthropic/claude-sonnet-4.5`, `google/gemini-2.5-pro`). The base URL is auto-configured to `https://openrouter.ai/api/v1`.
 
-Run `./scripts/list-models.sh` to fetch all available models with pricing, sorted by cost.
+The dashboard settings panel includes a **dynamic model picker** when OpenRouter is selected -- it fetches all 300+ models with live pricing from the OpenRouter API, with search filtering and sort by price. LLM cost tracking uses **actual costs** from OpenRouter's API response, so free models correctly show $0.
+
+Run `./scripts/list-models.sh` to fetch all available models with pricing to a local JSON file, sorted by cost.
 
 **Optional OpenAI Base URL Override:**
 
@@ -290,7 +292,8 @@ npx wrangler secret put ANTHROPIC_API_KEY # Your Anthropic API key
 | `/agent/status` | Full status (account, positions, signals) |
 | `/agent/enable` | Enable the agent |
 | `/agent/disable` | Disable the agent |
-| `/agent/config` | Get or update configuration |
+| `/agent/config` | GET or POST configuration |
+| `/agent/costs` | GET costs, or DELETE to reset cost tracker |
 | `/agent/logs` | Get recent logs |
 | `/agent/trigger` | Manually trigger (for testing) |
 | `/agent/kill` | Emergency kill switch (uses `KILL_SWITCH_SECRET`) |
@@ -355,10 +358,61 @@ mahoraga/
 │   ├── test-alpaca.ts          # Alpaca API connection test
 │   ├── list-models.sh          # Fetch OpenRouter models + pricing
 │   └── setup-access.ts         # Cloudflare Access setup
-├── dashboard/                  # React dashboard (Vite + React)
+├── dashboard/                  # React dashboard (Vite + React + Tailwind)
+│   └── src/
+│       ├── index.css           # Synthwave '84 theme, glow utilities, CRT overlay CSS
+│       ├── components/         # Panel, LineChart, ModelPicker, CrtEffect, etc.
+│       └── hooks/              # useOpenRouterModels (dynamic model fetching)
 ├── docs/                       # Documentation
 └── migrations/                 # D1 database migrations
 ```
+
+## Dashboard Theming
+
+The dashboard uses a **[Synthwave '84](https://github.com/robb0wen/synthwave-vscode)** color palette with neon glow effects, defined as CSS custom properties in `dashboard/src/index.css`.
+
+### Color Palette
+
+All colors are pulled from the Synthwave '84 VS Code theme:
+
+```css
+@theme {
+  /* Backgrounds — deep purple-blue */
+  --color-hud-bg: #262335;
+  --color-hud-bg-panel: #2a2139;
+
+  /* Core accents */
+  --color-hud-primary: #36f9f6;     /* Neon cyan */
+  --color-hud-success: #72f1b8;     /* Neon green */
+  --color-hud-warning: #fede5d;     /* Neon yellow */
+  --color-hud-error: #fe4450;       /* Neon red */
+  --color-hud-purple: #ff7edb;      /* Neon pink */
+  --color-hud-cyan: #03edf9;        /* Bright cyan */
+
+  /* Text */
+  --color-hud-text: #b6b1b1;        /* Muted warm grey */
+  --color-hud-text-dim: #848bbd;    /* Lavender */
+  --color-hud-text-bright: #f4eee4; /* Off-white */
+}
+```
+
+### Neon Glow Effects
+
+Text glow utilities (`.glow-cyan`, `.glow-green`, `.glow-pink`, `.glow-red`, `.glow-yellow`, `.glow-orange`) apply `text-shadow` halos inspired by the Synthwave '84 glow CSS. They're used on panel titles, status indicators, large metric values, and the header title. A pink-to-cyan gradient stripe (`.neon-stripe`) accents panel headers and dividers.
+
+### CRT Effect
+
+A toggleable CRT screen effect is available via the **[CRT]** button in the top-left of the header. It adds:
+
+- **Scanlines** — Thin horizontal bars with a slow retrace scroll
+- **Vignette** — Radial gradient darkening screen edges
+- **Static noise** — Tiled noise texture animated via CSS
+- **Flicker** — Subtle brightness/contrast oscillation on the page
+- **Chromatic aberration** — Faint red/cyan fringe at screen edges
+
+The effect is CSS-only with zero per-frame JavaScript (noise tile is generated once on mount). Inspired by [CRTFilter.js](https://github.com/Ichiaka/CRTFilter). The preference is persisted to `localStorage`.
+
+All overlay layers use `pointer-events: none` and high `z-index` so they never block interaction.
 
 ## Safety Features
 

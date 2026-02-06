@@ -92,9 +92,6 @@ export class OpenAIProvider implements LLMProvider {
             }
           }
           console.log(`[LLM] Cached pricing for ${this.modelCache.size} OpenRouter models`);
-          // #region agent log
-          fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'openai.ts:ensureModelInfo',message:'pricing_fetched',data:{modelCount:this.modelCache.size},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-          // #endregion
         }
       } catch (err) {
         console.warn("[LLM] Failed to fetch OpenRouter model info:", err);
@@ -152,10 +149,6 @@ export class OpenAIProvider implements LLMProvider {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      // #region agent log
-      const attemptStart = Date.now();
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'openai.ts:complete',message:'attempt_start',data:{modelId,attempt,maxRetries,attemptStart},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: "POST",
         headers: {

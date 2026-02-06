@@ -236,6 +236,8 @@ MAHORAGA supports multiple LLM providers via four modes:
 
 OpenRouter gives you access to 300+ models (OpenAI, Anthropic, Google, Meta, DeepSeek, xAI, and more) through a single API key. Get your key at [openrouter.ai/keys](https://openrouter.ai/keys).
 
+> **Free model support:** MAHORAGA automatically detects free-tier models (model IDs containing `:free` or `/free`) and applies 8-second rate limiting between LLM calls to respect free-tier rate limits. If a model does not support system prompts (e.g., some Gemma variants via the `openrouter/free` endpoint), MAHORAGA automatically retries by converting system instructions into user message prefixes. Cost tracking correctly reports `$0.00 (free)` for these models.
+
 ```bash
 # .dev.vars (local) or wrangler secrets (production)
 LLM_PROVIDER=openrouter
@@ -423,6 +425,8 @@ All overlay layers use `pointer-events: none` and high `z-index` so they never b
 | Position Limits | Max positions and $ per position |
 | Daily Loss Limit | Stops trading after 2% daily loss |
 | Staleness Detection | Auto-exit stale positions |
+| Duplicate Buy Prevention | Tracks recently ordered symbols for 5 minutes to prevent duplicate buys while orders are `pending_new` |
+| Crypto/Stock Path Isolation | Analyst excludes crypto symbols from stock buy candidates, preventing double-buying through both the crypto and analyst execution paths |
 | No Margin | Cash-only trading |
 | No Shorting | Long positions only |
 

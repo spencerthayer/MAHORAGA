@@ -918,17 +918,9 @@ export class MahoragaHarness extends DurableObject<Env> {
 
       const positions = await alpaca.trading.getPositions();
 
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:mainLoop:916',message:'cycle_positions',data:{positionSymbols:positions.map(p=>p.symbol),positionCount:positions.length,cachedBuyVerdicts:Object.entries(this.state.signalResearch).filter(([_,r])=>r.verdict==='BUY').map(([s,r])=>({symbol:s,confidence:r.confidence,age:Date.now()-r.timestamp}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-      // #endregion
-
       if (this.state.config.crypto_enabled) {
         await this.runCryptoTrading(alpaca, positions);
       }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:mainLoop:postCrypto',message:'post_crypto_state',data:{cachedBuyVerdicts:Object.entries(this.state.signalResearch).filter(([_,r])=>r.verdict==='BUY').map(([s,r])=>({symbol:s,confidence:r.confidence,isCrypto:s.includes('/')}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
 
       if (clock.is_open) {
         if (this.isMarketJustOpened() && this.state.premarketPlan) {
@@ -1952,9 +1944,6 @@ JSON response:
     confidence: number,
     account: Account
   ): Promise<boolean> {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:executeCryptoBuy',message:'crypto_buy_attempt',data:{symbol,confidence,cash:account.cash,path:'crypto'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
     const sizePct = Math.min(20, this.state.config.position_size_pct_of_cash);
     const positionSize = Math.min(
       account.cash * (sizePct / 100) * confidence,
@@ -2422,26 +2411,12 @@ JSON response:
     const isFreeModel = this.state.config.llm_model.includes(":free") || this.state.config.llm_model.includes("/free");
     const delayBetweenCalls = isFreeModel ? 8_000 : 500;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchTopSignals',message:'loop_config',data:{model:this.state.config.llm_model,isFreeModel,delayBetweenCalls,signalCount:aggregated.size},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H2'})}).catch(()=>{});
-    // #endregion
-
     const results: ResearchResult[] = [];
     for (const [symbol, data] of aggregated) {
-      // #region agent log
-      const callStart = Date.now();
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchTopSignals',message:'call_start',data:{symbol,callStart},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H4'})}).catch(()=>{});
-      // #endregion
       const analysis = await this.researchSignal(symbol, data.sentiment, data.sources);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchTopSignals',message:'call_done',data:{symbol,durationMs:Date.now()-callStart,hasResult:!!analysis,verdict:analysis?.verdict},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1,H3'})}).catch(()=>{});
-      // #endregion
       if (analysis) {
         results.push(analysis);
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchTopSignals',message:'sleeping',data:{symbol,delayBetweenCalls},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       await this.sleep(delayBetweenCalls);
     }
 
@@ -2743,10 +2718,6 @@ Response format:
         .filter((r) => !isCryptoSymbol(r.symbol, [...cryptoSymbolSet])) // Crypto handled by runCryptoTrading
         .sort((a, b) => b.confidence - a.confidence);
 
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:runAnalyst:2700',message:'analyst_buy_candidates',data:{researchedBuys:researchedBuys.map(r=>({symbol:r.symbol,confidence:r.confidence,isCrypto:r.symbol.includes('/')})),heldSymbols:[...heldSymbols],positionCount:positions.length,maxPositions:this.state.config.max_positions},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-
       for (const research of researchedBuys.slice(0, 3)) {
         if (positions.length >= this.state.config.max_positions) break;
         if (heldSymbols.has(research.symbol)) continue;
@@ -2901,10 +2872,6 @@ Response format:
       const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
       const orderSymbol = isCrypto ? normalizeCryptoSymbol(symbol) : symbol;
       const timeInForce = isCrypto ? "gtc" : "day";
-
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:executeBuy:2855',message:'executor_buy_attempt',data:{symbol,orderSymbol,isCrypto,confidence,positionSize,cash:account.cash,path:'analyst'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
 
       if (!isCrypto) {
         const allowedExchanges = this.state.config.allowed_exchanges ?? ["NYSE", "NASDAQ", "ARCA", "AMEX", "BATS"];

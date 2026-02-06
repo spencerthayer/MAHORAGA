@@ -30,6 +30,36 @@
   --color-hud-orange: #f97e72;
   
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
+
+  /* ── Typography scale ──
+     All sizes derive from --font-size-base.
+     Change that single value and every tier scales with it. */
+  --font-size-base: .85em;
+
+  --font-size-hud-2xs: calc(var(--font-size-base) * 0.8);   /* 8px  – labels          */
+  --font-size-hud-xs:  calc(var(--font-size-base) * 0.9);   /* 9px  – sub-labels       */
+  --font-size-hud-sm:  var(--font-size-base);                /* 10px – buttons, base    */
+  --font-size-hud-md:  calc(var(--font-size-base) * 1.1);   /* 11px – inputs, sm vals  */
+  --font-size-hud-lg:  calc(var(--font-size-base) * 1.4);   /* 14px – medium values    */
+  --font-size-hud-xl:  calc(var(--font-size-base) * 2.4);   /* 24px – large values     */
+  --font-size-hud-2xl: calc(var(--font-size-base) * 3.6);   /* 36px – hero values      */
+
+  /* ── Line-heights ── */
+  --line-height-hud-none:   1;
+  --line-height-hud-tight:  1.2;
+  --line-height-hud-normal: 1.4;
+
+  /* ── Letter-spacing ── */
+  --letter-spacing-hud-tighter: -0.02em;
+  --letter-spacing-hud-tight:   -0.01em;
+  --letter-spacing-hud-normal:   0.05em;
+  --letter-spacing-hud-wide:     0.1em;
+  --letter-spacing-hud-wider:    0.15em;
+
+  /* ── Font-weights ── */
+  --font-weight-hud-light:  300;
+  --font-weight-hud-normal: 400;
+  --font-weight-hud-bold:   700;
 }
 
 @layer base {
@@ -39,11 +69,12 @@
   
   html {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-base);
     background: linear-gradient(to bottom, var(--color-hud-bg) 75%, #34294f);
     background-attachment: fixed;
     color: var(--color-hud-text);
-    letter-spacing: 0.05em;
+    letter-spacing: var(--letter-spacing-hud-normal);
+    line-height: var(--line-height-hud-normal);
   }
   
   body {
@@ -79,18 +110,20 @@
   
   /* ── Label ── */
   .hud-label {
-    font-size: 8px;
+    font-size: var(--font-size-hud-2xs);
+    font-weight: var(--font-weight-hud-normal);
     text-transform: uppercase;
-    letter-spacing: 0.15em;
+    letter-spacing: var(--letter-spacing-hud-wider);
+    line-height: var(--line-height-hud-tight);
     color: var(--color-hud-text-dim);
   }
   
   /* ── Value sizes ── */
   .hud-value-xl {
-    font-size: 36px;
-    font-weight: 300;
-    letter-spacing: -0.02em;
-    line-height: 1;
+    font-size: var(--font-size-hud-2xl);
+    font-weight: var(--font-weight-hud-light);
+    letter-spacing: var(--letter-spacing-hud-tighter);
+    line-height: var(--line-height-hud-none);
     color: var(--color-hud-text-bright);
     text-shadow:
       0 0 4px rgba(244, 238, 228, 0.3),
@@ -98,25 +131,25 @@
   }
   
   .hud-value-lg {
-    font-size: 24px;
-    font-weight: 300;
-    letter-spacing: -0.01em;
-    line-height: 1;
+    font-size: var(--font-size-hud-xl);
+    font-weight: var(--font-weight-hud-light);
+    letter-spacing: var(--letter-spacing-hud-tight);
+    line-height: var(--line-height-hud-none);
     color: var(--color-hud-text-bright);
     text-shadow: 0 0 6px rgba(54, 249, 246, 0.12);
   }
   
   .hud-value-md {
-    font-size: 14px;
-    font-weight: 400;
-    line-height: 1;
+    font-size: var(--font-size-hud-lg);
+    font-weight: var(--font-weight-hud-normal);
+    line-height: var(--line-height-hud-none);
     color: var(--color-hud-text);
   }
   
   .hud-value-sm {
-    font-size: 11px;
-    font-weight: 400;
-    line-height: 1;
+    font-size: var(--font-size-hud-md);
+    font-weight: var(--font-weight-hud-normal);
+    line-height: var(--line-height-hud-none);
     color: var(--color-hud-text);
   }
 
@@ -126,7 +159,9 @@
     border: 0.5px solid var(--color-hud-line);
     color: var(--color-hud-text);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-hud-md);
+    font-weight: var(--font-weight-hud-normal);
+    line-height: var(--line-height-hud-normal);
     padding: 6px 10px;
     outline: none;
     transition: border-color 0.2s, box-shadow 0.2s;
@@ -143,9 +178,11 @@
     border: 0.5px solid var(--color-hud-primary);
     color: var(--color-hud-primary);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-hud-sm);
+    font-weight: var(--font-weight-hud-normal);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: var(--letter-spacing-hud-wide);
+    line-height: var(--line-height-hud-tight);
     padding: 8px 16px;
     cursor: pointer;
     transition: all 0.2s;

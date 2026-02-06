@@ -127,7 +127,7 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
         <span className="shrink-0 flex items-center gap-2">
           {selectedModel && (
             <span className={clsx(
-              'text-[9px]',
+              'text-hud-xs',
               selectedModel.combinedPricePer1M === 0 ? 'text-hud-success' : 'text-hud-text-dim'
             )}>
               {formatPrice(selectedModel.combinedPricePer1M)}/1M
@@ -177,7 +177,7 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
 
             {/* Model count */}
             <div className="px-3 py-1 border-b border-hud-line/30 shrink-0">
-              <span className="text-[9px] text-hud-text-dim">
+              <span className="text-hud-xs text-hud-text-dim">
                 {filteredModels.length} of {models.length} models
               </span>
             </div>
@@ -219,7 +219,7 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
                     {/* Model info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-hud-text-dim bg-hud-bg px-1 rounded shrink-0">
+                        <span className="text-hud-sm text-hud-text-dim bg-hud-bg px-1 rounded shrink-0">
                           {provider}
                         </span>
                         <span className="hud-value-sm truncate">{m.id.split('/').slice(1).join('/')}</span>
@@ -227,7 +227,7 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
                     </div>
 
                     {/* Context length */}
-                    <span className="text-[9px] text-hud-text-dim shrink-0 hidden sm:inline">
+                    <span className="text-hud-xs text-hud-text-dim shrink-0 hidden sm:inline">
                       {m.contextLength >= 1000000
                         ? `${(m.contextLength / 1000000).toFixed(1)}M`
                         : `${Math.round(m.contextLength / 1000)}k`}
@@ -235,7 +235,7 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
 
                     {/* Price */}
                     <span className={clsx(
-                      'text-[10px] shrink-0 w-16 text-right font-mono',
+                      'text-hud-sm shrink-0 w-16 text-right font-mono',
                       isFree ? 'text-hud-success' : 'text-hud-text-dim'
                     )}>
                       {isFree ? 'FREE' : `$${m.combinedPricePer1M < 1 ? m.combinedPricePer1M.toFixed(3) : m.combinedPricePer1M.toFixed(2)}`}
@@ -248,7 +248,7 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
 
             {/* Footer */}
             <div className="px-3 py-2 border-t border-hud-line/50 shrink-0">
-              <span className="text-[8px] text-hud-text-dim">
+              <span className="text-hud-2xs text-hud-text-dim">
                 Combined price (in + out) per 1M tokens in USD
               </span>
             </div>

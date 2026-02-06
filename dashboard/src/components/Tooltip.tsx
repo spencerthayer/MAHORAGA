@@ -214,7 +214,7 @@ export function TooltipContent({ title, items, description }: TooltipContentProp
       )}
       
       {description && (
-        <p className="text-hud-text-dim text-[10px] leading-tight">
+        <p className="text-hud-text-dim text-hud-sm leading-tight">
           {description}
         </p>
       )}

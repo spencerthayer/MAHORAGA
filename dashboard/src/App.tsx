@@ -540,19 +540,19 @@ export default function App() {
                     const analystCost = byModel[analystModel]
                     return (
                       <>
-                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-[10px]">
-                          <span className="hud-label text-[9px]">MODEL</span>
-                          <span className="hud-label text-[9px] text-right">CALLS</span>
-                          <span className="hud-label text-[9px] text-right">COST</span>
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-hud-sm">
+                          <span className="hud-label text-hud-xs">MODEL</span>
+                          <span className="hud-label text-hud-xs text-right">CALLS</span>
+                          <span className="hud-label text-hud-xs text-right">COST</span>
                         </div>
-                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-[10px]">
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-hud-sm">
                           <span className="text-hud-text truncate" title={researchModel}>
                             <span className="text-hud-text-dim">RES</span> {researchModel}
                           </span>
                           <span className="text-hud-text-dim text-right font-mono">{researchCost?.calls ?? 0}</span>
                           <span className="text-hud-text text-right font-mono">${(researchCost?.total_usd ?? 0).toFixed(4)}</span>
                         </div>
-                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-[10px]">
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center text-hud-sm">
                           <span className="text-hud-text truncate" title={analystModel}>
                             <span className="text-hud-text-dim">ANA</span> {analystModel}
                           </span>
@@ -799,20 +799,20 @@ export default function App() {
                           </div>
                           {research.catalysts.length > 0 && (
                             <div className="pt-1 border-t border-hud-line/30">
-                              <span className="text-[9px] text-hud-text-dim">CATALYSTS:</span>
+                              <span className="text-hud-xs text-hud-text-dim">CATALYSTS:</span>
                               <ul className="mt-1 space-y-0.5">
                                 {research.catalysts.map((c, i) => (
-                                  <li key={i} className="text-[10px] text-hud-success">+ {c}</li>
+                                  <li key={i} className="text-hud-sm text-hud-success">+ {c}</li>
                                 ))}
                               </ul>
                             </div>
                           )}
                           {research.red_flags.length > 0 && (
                             <div className="pt-1 border-t border-hud-line/30">
-                              <span className="text-[9px] text-hud-text-dim">RED FLAGS:</span>
+                              <span className="text-hud-xs text-hud-text-dim">RED FLAGS:</span>
                               <ul className="mt-1 space-y-0.5">
                                 {research.red_flags.map((f, i) => (
-                                  <li key={i} className="text-[10px] text-hud-error">- {f}</li>
+                                  <li key={i} className="text-hud-sm text-hud-error">- {f}</li>
                                 ))}
                               </ul>
                             </div>

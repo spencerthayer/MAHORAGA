@@ -69,7 +69,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                 Save & Reload
               </button>
             </div>
-            <p className="text-[9px] text-hud-text-dim mt-1">
+            <p className="text-hud-xs text-hud-text-dim mt-1">
               Your MAHORAGA_API_TOKEN from Cloudflare secrets. Required for all API access.
             </p>
           </div>
@@ -207,7 +207,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                       <option value={localConfig.llm_provider}>Custom (backend configured)</option>
                     )}
                 </select>
-                <p className="text-[9px] text-hud-text-dim mt-1">
+                <p className="text-hud-xs text-hud-text-dim mt-1">
                   {localConfig.llm_provider === 'ai-sdk' && 'Supports: OpenAI, Anthropic, Google, xAI, DeepSeek'}
                   {(!localConfig.llm_provider || localConfig.llm_provider === 'openai-raw') && 'Uses OPENAI_API_KEY directly (+ optional OPENAI_BASE_URL).'}
                   {localConfig.llm_provider === 'openrouter' && 'Uses OPENAI_API_KEY with OpenRouter. Set OPENAI_BASE_URL=https://openrouter.ai/api/v1'}
@@ -488,7 +488,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                   />
                   <span className="hud-label">Enable Crypto Trading</span>
                 </label>
-                <p className="text-[9px] text-hud-text-dim mt-1">Trade crypto 24/7 based on momentum. Alpaca supports 20+ coins.</p>
+                <p className="text-hud-xs text-hud-text-dim mt-1">Trade crypto 24/7 based on momentum. Alpaca supports 20+ coins.</p>
               </div>
               <div>
                 <label className="hud-label block mb-1">Symbols (comma-separated)</label>
@@ -591,7 +591,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                   onChange={e => handleChange('stale_social_volume_decay', Number(e.target.value))}
                   disabled={!localConfig.stale_position_enabled}
                 />
-                <p className="text-[9px] text-hud-text-dim mt-1">Exit if volume drops to this % of entry</p>
+                <p className="text-hud-xs text-hud-text-dim mt-1">Exit if volume drops to this % of entry</p>
               </div>
             </div>
           </div>

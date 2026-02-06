@@ -1784,6 +1784,10 @@ export class MahoragaHarness extends DurableObject<Env> {
       let research: ResearchResult | null = validExisting ?? null;
       if (!validExisting || Date.now() - validExisting.timestamp > CRYPTO_RESEARCH_TTL_MS) {
         research = await this.researchCrypto(signal.symbol, signal.momentum || 0, signal.sentiment);
+        // Respect free-tier rate limits between crypto research calls
+        if (this.state.config.llm_model.includes(":free")) {
+          await this.sleep(8_000);
+        }
       }
 
       if (!research || research.verdict !== "BUY") {
@@ -2384,13 +2388,18 @@ JSON response:
       }
     }
 
+    // Free-tier models have strict rate limits (e.g. 8 RPM on OpenRouter).
+    // Use longer delays between calls to avoid hammering the API.
+    const isFreeModel = this.state.config.llm_model.includes(":free");
+    const delayBetweenCalls = isFreeModel ? 8_000 : 500;
+
     const results: ResearchResult[] = [];
     for (const [symbol, data] of aggregated) {
       const analysis = await this.researchSignal(symbol, data.sentiment, data.sources);
       if (analysis) {
         results.push(analysis);
       }
-      await this.sleep(500);
+      await this.sleep(delayBetweenCalls);
     }
 
     return results;

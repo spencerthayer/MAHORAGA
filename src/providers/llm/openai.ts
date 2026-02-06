@@ -160,20 +160,21 @@ export class OpenAIProvider implements LLMProvider {
 
       if (response.ok) {
         const data = (await response.json()) as OpenAIResponse;
-        const content = data.choices[0]?.message?.content ?? "";
+        const content = data.choices?.[0]?.message?.content ?? "";
+        const usage = data.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
         // Use OpenRouter's reported cost if > 0, otherwise calculate from cached pricing
-        let cost = data.usage.cost && data.usage.cost > 0 ? data.usage.cost : undefined;
+        let cost = usage.cost && usage.cost > 0 ? usage.cost : undefined;
         if (cost === undefined && this.isOpenRouter) {
-          cost = this.calculateCost(modelId, data.usage.prompt_tokens, data.usage.completion_tokens);
+          cost = this.calculateCost(modelId, usage.prompt_tokens, usage.completion_tokens);
         }
 
         return {
           content,
           usage: {
-            prompt_tokens: data.usage.prompt_tokens,
-            completion_tokens: data.usage.completion_tokens,
-            total_tokens: data.usage.total_tokens,
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total_tokens,
             cost,
           },
         };

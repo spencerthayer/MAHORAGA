@@ -17,10 +17,12 @@ export function Panel({
   noPadding = false,
 }: PanelProps) {
   return (
-    <div className={clsx('hud-panel flex flex-col', className)}>
+    <div className={clsx('hud-panel flex flex-col relative overflow-hidden', className)}>
+      {/* Synthwave neon stripe accent */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] neon-stripe opacity-60" />
       {(title || titleRight) && (
         <div className="flex justify-between items-center px-4 py-2 border-b border-hud-line shrink-0">
-          {title && <span className="hud-label">{title}</span>}
+          {title && <span className="hud-label glow-cyan">{title}</span>}
           {titleRight && (
             typeof titleRight === 'string' 
               ? <span className="hud-value-sm">{titleRight}</span>

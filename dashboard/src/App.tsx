@@ -330,10 +330,10 @@ export default function App() {
   return (
     <div className="min-h-screen bg-hud-bg">
       <div className="max-w-[1920px] mx-auto p-4">
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 pb-3 border-b border-hud-line">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 pb-3 border-b border-hud-line relative after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1px] after:neon-stripe after:opacity-40">
           <div className="flex items-center gap-4 md:gap-6">
             <div className="flex items-baseline gap-2">
-              <span className="text-xl md:text-2xl font-light tracking-tight text-hud-text-bright">
+              <span className="text-xl md:text-2xl font-light tracking-tight text-hud-text-bright hud-title-glow">
                 MAHORAGA
               </span>
               <span className="hud-label">v2</span>
@@ -490,7 +490,18 @@ export default function App() {
           </div>
 
           <div className="col-span-4 md:col-span-8 lg:col-span-4">
-            <Panel title="LLM COSTS" className="h-full">
+            <Panel title="LLM COSTS" titleRight={
+              <button
+                className="hud-label hover:text-hud-error transition-colors"
+                onClick={async () => {
+                  if (!confirm('Reset LLM cost tracking to zero?')) return
+                  await authFetch(`${API_BASE}/costs`, { method: 'DELETE' })
+                }}
+                title="Reset cost tracker to zero"
+              >
+                [RESET]
+              </button>
+            } className="h-full">
               <div className="space-y-3">
                 {/* Totals */}
                 <div className="grid grid-cols-2 gap-4">
@@ -828,7 +839,7 @@ export default function App() {
           </div>
         </div>
 
-        <footer className="mt-4 pt-3 border-t border-hud-line flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <footer className="mt-4 pt-3 border-t border-hud-line relative before:absolute before:top-0 before:left-0 before:right-0 before:h-[1px] before:neon-stripe before:opacity-40 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex flex-wrap gap-4 md:gap-6">
             {config && (
               <>

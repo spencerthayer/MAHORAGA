@@ -1,27 +1,33 @@
 @import "tailwindcss";
 
 @theme {
-  --color-hud-bg: #101418;
-  --color-hud-bg-panel: #161b21;
+  /* ── Synthwave '84 backgrounds ── */
+  --color-hud-bg: #262335;
+  --color-hud-bg-panel: #2a2139;
+  --color-hud-bg-deep: #1b172a;
   
-  --color-hud-primary: #8fb3c2;
-  --color-hud-dim: #4e6570;
-  --color-hud-line: rgba(143, 179, 194, 0.22);
-  --color-hud-border: rgba(143, 179, 194, 0.3);
+  /* ── Core palette ── */
+  --color-hud-primary: #36f9f6;
+  --color-hud-dim: #495495;
+  --color-hud-line: rgba(73, 84, 149, 0.35);
+  --color-hud-border: rgba(73, 84, 149, 0.5);
   
-  --color-hud-text: #93b0bc;
-  --color-hud-text-dim: #647880;
-  --color-hud-text-bright: #daeaf0;
+  /* ── Text ── */
+  --color-hud-text: #b6b1b1;
+  --color-hud-text-dim: #848bbd;
+  --color-hud-text-bright: #f4eee4;
   
-  --color-hud-success: #5cb87e;
-  --color-hud-warning: #d4b058;
-  --color-hud-error: #d45858;
-  --color-hud-purple: #a07ed4;
-  --color-hud-cyan: #6cb4d4;
-  --color-hud-blue: #6c92d4;
-  --color-hud-green: #5cb87e;
-  --color-hud-yellow: #d4b058;
-  --color-hud-red: #d45858;
+  /* ── Accents ── */
+  --color-hud-success: #72f1b8;
+  --color-hud-warning: #fede5d;
+  --color-hud-error: #fe4450;
+  --color-hud-purple: #ff7edb;
+  --color-hud-cyan: #03edf9;
+  --color-hud-blue: #495495;
+  --color-hud-green: #72f1b8;
+  --color-hud-yellow: #fede5d;
+  --color-hud-red: #fe4450;
+  --color-hud-orange: #f97e72;
   
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
 }
@@ -34,7 +40,8 @@
   html {
     font-family: var(--font-mono);
     font-size: 10px;
-    background-color: var(--color-hud-bg);
+    background: linear-gradient(to bottom, var(--color-hud-bg) 75%, #34294f);
+    background-attachment: fixed;
     color: var(--color-hud-text);
     letter-spacing: 0.05em;
   }
@@ -61,11 +68,16 @@
 }
 
 @layer components {
+  /* ── Panel ── */
   .hud-panel {
     background: var(--color-hud-bg-panel);
     border: 0.5px solid var(--color-hud-line);
+    box-shadow:
+      0 0 8px rgba(73, 84, 149, 0.1),
+      inset 0 0 30px rgba(42, 33, 57, 0.5);
   }
   
+  /* ── Label ── */
   .hud-label {
     font-size: 8px;
     text-transform: uppercase;
@@ -73,12 +85,16 @@
     color: var(--color-hud-text-dim);
   }
   
+  /* ── Value sizes ── */
   .hud-value-xl {
     font-size: 36px;
     font-weight: 300;
     letter-spacing: -0.02em;
     line-height: 1;
     color: var(--color-hud-text-bright);
+    text-shadow:
+      0 0 4px rgba(244, 238, 228, 0.3),
+      0 0 12px rgba(54, 249, 246, 0.15);
   }
   
   .hud-value-lg {
@@ -87,6 +103,7 @@
     letter-spacing: -0.01em;
     line-height: 1;
     color: var(--color-hud-text-bright);
+    text-shadow: 0 0 6px rgba(54, 249, 246, 0.12);
   }
   
   .hud-value-md {
@@ -103,6 +120,7 @@
     color: var(--color-hud-text);
   }
 
+  /* ── Input ── */
   .hud-input {
     background: var(--color-hud-bg);
     border: 0.5px solid var(--color-hud-line);
@@ -111,13 +129,15 @@
     font-size: 11px;
     padding: 6px 10px;
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
 
   .hud-input:focus {
     border-color: var(--color-hud-primary);
+    box-shadow: 0 0 6px rgba(54, 249, 246, 0.25);
   }
 
+  /* ── Button ── */
   .hud-button {
     background: transparent;
     border: 0.5px solid var(--color-hud-primary);
@@ -129,15 +149,113 @@
     padding: 8px 16px;
     cursor: pointer;
     transition: all 0.2s;
+    text-shadow: 0 0 4px rgba(54, 249, 246, 0.3);
   }
 
   .hud-button:hover {
     background: var(--color-hud-primary);
     color: var(--color-hud-bg);
+    box-shadow:
+      0 0 8px rgba(54, 249, 246, 0.4),
+      0 0 20px rgba(54, 249, 246, 0.15);
+    text-shadow: none;
   }
 
   .hud-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* ── Glow utilities ── */
+
+  /* Neon cyan text glow (for primary values) */
+  .glow-cyan {
+    text-shadow:
+      0 0 2px #001716,
+      0 0 3px rgba(3, 237, 249, 0.46),
+      0 0 5px rgba(3, 237, 249, 0.46),
+      0 0 8px rgba(3, 237, 249, 0.46);
+  }
+
+  /* Neon green text glow (for success values) */
+  .glow-green {
+    text-shadow:
+      0 0 2px #100c0f,
+      0 0 10px rgba(37, 124, 85, 0.46),
+      0 0 35px rgba(33, 39, 36, 0.46);
+  }
+
+  /* Neon pink text glow */
+  .glow-pink {
+    text-shadow:
+      0 0 2px #100c0f,
+      0 0 5px rgba(220, 7, 142, 0.2),
+      0 0 10px rgba(255, 255, 255, 0.2);
+  }
+
+  /* Neon red text glow */
+  .glow-red {
+    text-shadow:
+      0 0 2px #000,
+      0 0 10px rgba(252, 31, 44, 0.46),
+      0 0 5px rgba(252, 31, 44, 0.46),
+      0 0 25px rgba(252, 31, 44, 0.46);
+  }
+
+  /* Neon orange text glow */
+  .glow-orange {
+    text-shadow:
+      0 0 2px #393a33,
+      0 0 8px rgba(243, 159, 5, 0.46),
+      0 0 2px rgba(243, 159, 5, 0.46);
+  }
+
+  /* Neon yellow text glow */
+  .glow-yellow {
+    text-shadow:
+      0 0 2px #393a33,
+      0 0 8px rgba(254, 222, 93, 0.35),
+      0 0 16px rgba(254, 222, 93, 0.15);
+  }
+
+  /* Neon border glow (for panels on hover) */
+  .glow-border-cyan {
+    box-shadow:
+      0 0 4px rgba(3, 237, 249, 0.15),
+      0 0 12px rgba(3, 237, 249, 0.08);
+  }
+
+  /* Gradient neon stripe (pink → cyan, like the Synthwave tab bar) */
+  .neon-stripe {
+    background: linear-gradient(to right, #fc28a8, #03edf9);
+  }
+
+  /* Header title glow */
+  .hud-title-glow {
+    color: var(--color-hud-text-bright);
+    text-shadow:
+      0 0 4px rgba(244, 238, 228, 0.4),
+      0 0 10px rgba(255, 126, 219, 0.2),
+      0 0 20px rgba(255, 126, 219, 0.1);
+  }
+
+  /* Status colors with glow */
+  .text-hud-success {
+    text-shadow: 0 0 6px rgba(114, 241, 184, 0.3);
+  }
+  .text-hud-error {
+    text-shadow: 0 0 6px rgba(254, 68, 80, 0.3);
+  }
+  .text-hud-warning {
+    text-shadow: 0 0 6px rgba(254, 222, 93, 0.25);
+  }
+  .text-hud-purple {
+    text-shadow: 0 0 6px rgba(255, 126, 219, 0.3);
+  }
+  .text-hud-cyan {
+    text-shadow: 0 0 6px rgba(3, 237, 249, 0.3);
+  }
+  .text-hud-primary {
+    text-shadow: 0 0 6px rgba(54, 249, 246, 0.3);
   }
 }

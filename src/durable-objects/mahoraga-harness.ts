@@ -1065,6 +1065,11 @@ export class MahoragaHarness extends DurableObject<Env> {
           return this.handleGetLogs(url);
 
         case "costs":
+          if (request.method === "DELETE") {
+            this.state.costTracker = { total_usd: 0, calls: 0, tokens_in: 0, tokens_out: 0, by_model: {} };
+            await this.ctx.storage.put("state", this.state);
+            return this.jsonResponse({ ok: true, message: "Costs reset" });
+          }
           return this.jsonResponse({ costs: this.state.costTracker });
 
         case "signals":

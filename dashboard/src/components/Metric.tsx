@@ -17,9 +17,9 @@ const sizeClasses = {
 
 const colorClasses = {
   default: '',
-  success: 'text-hud-success',
-  warning: 'text-hud-warning',
-  error: 'text-hud-error',
+  success: 'text-hud-success glow-green',
+  warning: 'text-hud-warning glow-yellow',
+  error: 'text-hud-error glow-red',
 }
 
 export function Metric({

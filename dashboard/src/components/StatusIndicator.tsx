@@ -14,6 +14,13 @@ const statusColors = {
   inactive: 'bg-hud-dim',
 }
 
+const statusGlow = {
+  active: 'shadow-[0_0_6px_rgba(114,241,184,0.6),0_0_12px_rgba(114,241,184,0.25)]',
+  warning: 'shadow-[0_0_6px_rgba(254,222,93,0.6),0_0_12px_rgba(254,222,93,0.25)]',
+  error: 'shadow-[0_0_6px_rgba(254,68,80,0.6),0_0_12px_rgba(254,68,80,0.25)]',
+  inactive: '',
+}
+
 export function StatusIndicator({
   status,
   label,
@@ -26,7 +33,8 @@ export function StatusIndicator({
         <div
           className={clsx(
             'w-2 h-2 rounded-full',
-            statusColors[status]
+            statusColors[status],
+            statusGlow[status]
           )}
         />
         {pulse && status === 'active' && (

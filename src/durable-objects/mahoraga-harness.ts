@@ -849,8 +849,14 @@ export class MahoragaHarness extends DurableObject<Env> {
   }
 
   private initializeLLM() {
-    const provider = this.state.config.llm_provider || this.env.LLM_PROVIDER || "openai-raw";
-    const model = this.state.config.llm_model || this.env.LLM_MODEL || "gpt-4o-mini";
+    // Env vars take precedence so that changing .dev.vars or wrangler secrets
+    // is immediately reflected without needing to clear stored state.
+    const provider = this.env.LLM_PROVIDER || this.state.config.llm_provider || "openai-raw";
+    const model = this.env.LLM_MODEL || this.state.config.llm_model || "gpt-4o-mini";
+
+    // Keep config in sync with the effective values so the dashboard reflects them
+    this.state.config.llm_provider = provider;
+    this.state.config.llm_model = model;
 
     const effectiveEnv: Env = {
       ...this.env,

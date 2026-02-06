@@ -72,9 +72,14 @@ export function createLLMProvider(env: Env): LLMProvider | null {
       if (!env.OPENAI_API_KEY) {
         return null;
       }
+      // When using a custom base URL (e.g. OpenRouter), keep the full model ID
+      // (e.g. "openai/gpt-5-mini") since the proxy needs it for routing.
+      // Only strip the provider prefix for direct OpenAI API calls.
+      const isCustomBaseUrl = !!openaiBaseUrl && !openaiBaseUrl.includes("api.openai.com");
+      const effectiveModel = isCustomBaseUrl ? model : model.includes("/") ? model.split("/")[1] : model;
       return createOpenAIProvider({
         apiKey: env.OPENAI_API_KEY,
-        model: model.includes("/") ? model.split("/")[1] : model,
+        model: effectiveModel,
         baseUrl: openaiBaseUrl,
       });
   }

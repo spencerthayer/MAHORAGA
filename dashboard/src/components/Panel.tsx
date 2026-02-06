@@ -30,7 +30,7 @@ export function Panel({
           )}
         </div>
       )}
-      <div className={clsx('flex-1 min-h-0', noPadding ? '' : 'p-3')}>
+      <div className={clsx('flex-1 min-h-0 overflow-auto', noPadding ? '' : 'p-3')}>
         {children}
       </div>
     </div>

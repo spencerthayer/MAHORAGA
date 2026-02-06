@@ -1808,26 +1808,28 @@ export class MahoragaHarness extends DurableObject<Env> {
       .filter((s) => s.sentiment > 0)
       .sort((a, b) => (b.momentum || 0) - (a.momentum || 0));
 
-    for (const signal of cryptoSignals.slice(0, 2)) {
+    const candidateSignals = cryptoSignals.slice(0, 2);
+    if (candidateSignals.length === 0) return;
+
+    // Batch-research all crypto candidates in a single LLM call
+    const batchInput = candidateSignals.map((s) => ({
+      symbol: s.symbol,
+      momentum: s.momentum || 0,
+      sentiment: s.sentiment,
+    }));
+    const researchResults = await this.researchCryptoBatch(batchInput);
+
+    // Build a lookup map from the batch results
+    const researchMap = new Map<string, ResearchResult>();
+    for (const r of researchResults) {
+      researchMap.set(r.symbol, r);
+    }
+
+    // Use batch results for trading decisions
+    for (const signal of candidateSignals) {
       if (cryptoPositions.length >= maxCryptoPositions) break;
 
-      const existingResearch = this.state.signalResearch[signal.symbol];
-      const CRYPTO_RESEARCH_TTL_MS = 300_000;
-
-      // Evict poisoned cache entries (undefined verdict from malformed LLM responses)
-      const validExisting = existingResearch?.verdict ? existingResearch : null;
-      if (existingResearch && !existingResearch.verdict) {
-        delete this.state.signalResearch[signal.symbol];
-      }
-
-      let research: ResearchResult | null = validExisting ?? null;
-      if (!validExisting || Date.now() - validExisting.timestamp > CRYPTO_RESEARCH_TTL_MS) {
-        research = await this.researchCrypto(signal.symbol, signal.momentum || 0, signal.sentiment);
-        // Respect free-tier rate limits between crypto research calls
-        if (this.state.config.llm_model.includes(":free") || this.state.config.llm_model.includes("/free")) {
-          await this.sleep(8_000);
-        }
-      }
+      const research = researchMap.get(signal.symbol) ?? null;
 
       if (!research || research.verdict !== "BUY") {
         this.log("Crypto", "research_skip", {
@@ -1957,6 +1959,192 @@ JSON response:
     } catch (error) {
       this.log("Crypto", "research_error", { symbol, error: String(error) });
       return null;
+    }
+  }
+
+  /**
+   * Batch-research multiple crypto signals in a single LLM call.
+   * Fetches snapshots in parallel, builds one prompt, parses array response.
+   */
+  private async researchCryptoBatch(
+    signals: Array<{ symbol: string; momentum: number; sentiment: number }>
+  ): Promise<ResearchResult[]> {
+    if (!this._llm || signals.length === 0) return [];
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchCryptoBatch:entry',message:'crypto_batch_entry',data:{signalCount:signals.length,symbols:signals.map(s=>s.symbol)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
+
+    const CACHE_TTL_MS = 300_000;
+    const now = Date.now();
+
+    // Separate cached from uncached
+    const cached: ResearchResult[] = [];
+    const uncached: Array<{ symbol: string; momentum: number; sentiment: number }> = [];
+
+    for (const sig of signals) {
+      const existing = this.state.signalResearch[sig.symbol];
+      if (existing && !existing.verdict) {
+        delete this.state.signalResearch[sig.symbol];
+      } else if (existing && now - existing.timestamp < CACHE_TTL_MS) {
+        cached.push(existing);
+        continue;
+      }
+      uncached.push(sig);
+    }
+
+    if (uncached.length === 0) {
+      this.log("Crypto", "batch_all_cached", { cachedCount: cached.length });
+      return cached;
+    }
+
+    try {
+      const alpaca = createAlpacaProviders(this.env);
+
+      // Fetch all snapshots in parallel
+      const snapshotResults = await Promise.allSettled(
+        uncached.map(async (sig) => {
+          const snapshot = await alpaca.marketData.getCryptoSnapshot(sig.symbol).catch(() => null);
+          const price = snapshot?.latest_trade?.price || 0;
+          const dailyChange = snapshot
+            ? ((snapshot.daily_bar.c - snapshot.prev_daily_bar.c) / snapshot.prev_daily_bar.c) * 100
+            : 0;
+          return { price, dailyChange };
+        })
+      );
+
+      const snapshots = snapshotResults.map((r) =>
+        r.status === "fulfilled" ? r.value : { price: 0, dailyChange: 0 }
+      );
+
+      // Build batched prompt
+      const signalBlocks = uncached.map((sig, i) => {
+        const snap = snapshots[i] ?? { price: 0, dailyChange: 0 };
+        return `SIGNAL ${i + 1}:
+- Symbol: ${sig.symbol}
+- Price: $${snap.price.toFixed(2)}
+- 24H Change: ${snap.dailyChange.toFixed(2)}%
+- Momentum Score: ${(sig.momentum * 100).toFixed(0)}%
+- Sentiment: ${(sig.sentiment * 100).toFixed(0)}% bullish`;
+      }).join("\n\n");
+
+      const prompt = `Analyze each cryptocurrency signal below. For each one, decide if we should BUY, SKIP, or WAIT.
+
+${signalBlocks}
+
+Consider for each:
+- Is the momentum sustainable or a trap?
+- Any major news/events affecting this crypto?
+- Risk/reward at current price level?
+
+Respond with a JSON object containing a "results" array with one entry per signal, in the same order:
+{
+  "results": [
+    {
+      "symbol": "SYMBOL",
+      "verdict": "BUY|SKIP|WAIT",
+      "confidence": 0.0-1.0,
+      "entry_quality": "excellent|good|fair|poor",
+      "reasoning": "brief reason",
+      "red_flags": ["any concerns"],
+      "catalysts": ["positive factors"]
+    }
+  ]
+}`;
+
+      const maxTokens = Math.min(300 * uncached.length, 4000);
+
+      const response = await this._llm.complete({
+        model: this.state.config.llm_model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a crypto analyst. Be skeptical of FOMO. Crypto is volatile - only recommend BUY for strong setups. Output valid JSON only.",
+          },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+      });
+
+      const usage = response.usage;
+      if (usage) {
+        this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
+      }
+
+      const content = response.content || "{}";
+      const parsed = JSON.parse(content.replace(/```json\n?|```/g, "").trim());
+      const resultsArray: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.results) ? parsed.results : [];
+
+      const validVerdicts = ["BUY", "SKIP", "WAIT"];
+      const batchResults: ResearchResult[] = [];
+
+      for (let i = 0; i < uncached.length; i++) {
+        const sig = uncached[i]!;
+        const entry = (resultsArray[i] as Record<string, unknown>) ??
+          (resultsArray.find((r) => (r as Record<string, unknown>)?.symbol === sig.symbol) as Record<string, unknown>);
+
+        if (!entry || !validVerdicts.includes(entry.verdict as string)) {
+          this.log("Crypto", "batch_invalid_entry", {
+            symbol: sig.symbol,
+            index: i,
+            reason: entry ? "Invalid verdict" : "Missing from response",
+          });
+          continue;
+        }
+
+        const result: ResearchResult = {
+          symbol: sig.symbol,
+          verdict: entry.verdict as "BUY" | "SKIP" | "WAIT",
+          confidence: typeof entry.confidence === "number" ? entry.confidence : 0.3,
+          entry_quality: (entry.entry_quality as ResearchResult["entry_quality"]) || "poor",
+          reasoning: (entry.reasoning as string) || "No reasoning provided",
+          red_flags: Array.isArray(entry.red_flags) ? (entry.red_flags as string[]) : [],
+          catalysts: Array.isArray(entry.catalysts) ? (entry.catalysts as string[]) : [],
+          timestamp: now,
+        };
+
+        this.state.signalResearch[sig.symbol] = result;
+        batchResults.push(result);
+
+        this.log("Crypto", "researched", {
+          symbol: result.symbol,
+          verdict: result.verdict,
+          confidence: result.confidence,
+          quality: result.entry_quality,
+        });
+      }
+
+      this.log("Crypto", "batch_complete", {
+        requested: uncached.length,
+        received: resultsArray.length,
+        valid: batchResults.length,
+        cached: cached.length,
+      });
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchCryptoBatch:done',message:'crypto_batch_done',data:{requested:uncached.length,valid:batchResults.length,verdicts:batchResults.map(r=>({s:r.symbol,v:r.verdict,c:r.confidence}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
+
+      return [...cached, ...batchResults];
+    } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchCryptoBatch:error',message:'crypto_batch_failed',data:{error:String(error).slice(0,300)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
+      this.log("Crypto", "batch_error", {
+        message: String(error),
+        signalCount: uncached.length,
+        symbols: uncached.map((s) => s.symbol),
+      });
+
+      // Fallback: try individual calls sequentially
+      this.log("Crypto", "batch_fallback_to_sequential", { count: uncached.length });
+      const fallbackResults: ResearchResult[] = [...cached];
+      for (const sig of uncached) {
+        const result = await this.researchCrypto(sig.symbol, sig.momentum, sig.sentiment);
+        if (result) fallbackResults.push(result);
+      }
+      return fallbackResults;
     }
   }
 
@@ -2396,6 +2584,208 @@ JSON response:
     }
   }
 
+  /**
+   * Batch-research multiple signals in a single LLM call.
+   * Fetches prices in parallel, builds one prompt with all symbols,
+   * and parses a JSON array response with per-symbol verdicts.
+   */
+  private async researchSignalsBatch(
+    signals: Array<{ symbol: string; sentiment: number; sources: string[] }>
+  ): Promise<ResearchResult[]> {
+    if (!this._llm || signals.length === 0) return [];
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:entry',message:'batch_entry',data:{signalCount:signals.length,symbols:signals.map(s=>s.symbol),model:this.state.config.llm_model},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
+
+    const CACHE_TTL_MS = 180_000;
+    const now = Date.now();
+
+    // Separate cached from uncached signals
+    const cached: ResearchResult[] = [];
+    const uncached: Array<{ symbol: string; sentiment: number; sources: string[] }> = [];
+
+    for (const sig of signals) {
+      const existing = this.state.signalResearch[sig.symbol];
+      // Evict poisoned cache entries
+      if (existing && !existing.verdict) {
+        delete this.state.signalResearch[sig.symbol];
+      } else if (existing && now - existing.timestamp < CACHE_TTL_MS) {
+        cached.push(existing);
+        continue;
+      }
+      uncached.push(sig);
+    }
+
+    if (uncached.length === 0) {
+      this.log("SignalResearch", "batch_all_cached", { cachedCount: cached.length });
+      return cached;
+    }
+
+    try {
+      const alpaca = createAlpacaProviders(this.env);
+      const cryptoSymbols = this.state.config.crypto_symbols || [];
+
+      // Fetch all prices in parallel
+      const priceResults = await Promise.allSettled(
+        uncached.map(async (sig) => {
+          const isCrypto = isCryptoSymbol(sig.symbol, cryptoSymbols);
+          if (isCrypto) {
+            const normalized = normalizeCryptoSymbol(sig.symbol);
+            const snapshot = await alpaca.marketData.getCryptoSnapshot(normalized).catch(() => null);
+            return snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
+          } else {
+            const snapshot = await alpaca.marketData.getSnapshot(sig.symbol).catch(() => null);
+            return snapshot?.latest_trade?.price || snapshot?.latest_quote?.ask_price || snapshot?.latest_quote?.bid_price || 0;
+          }
+        })
+      );
+
+      const prices = priceResults.map((r) => (r.status === "fulfilled" ? r.value : 0));
+
+      // Build batched prompt
+      const signalBlocks = uncached.map((sig, i) => {
+        const isCrypto = isCryptoSymbol(sig.symbol, cryptoSymbols);
+        return `SIGNAL ${i + 1}:
+- Symbol: ${sig.symbol} (${isCrypto ? "crypto" : "stock"})
+- Sentiment: ${(sig.sentiment * 100).toFixed(0)}% bullish (sources: ${sig.sources.join(", ")})
+- Price: $${prices[i]}`;
+      }).join("\n\n");
+
+      const prompt = `Analyze each signal below. For each one, decide if we should BUY, SKIP, or WAIT.
+
+${signalBlocks}
+
+Respond with a JSON object containing a "results" array with one entry per signal, in the same order:
+{
+  "results": [
+    {
+      "symbol": "SYMBOL",
+      "verdict": "BUY|SKIP|WAIT",
+      "confidence": 0.0-1.0,
+      "entry_quality": "excellent|good|fair|poor",
+      "reasoning": "brief reason",
+      "red_flags": ["any concerns"],
+      "catalysts": ["positive factors"]
+    }
+  ]
+}`;
+
+      const maxTokens = Math.min(300 * uncached.length, 4000);
+
+      const response = await this._llm.complete({
+        model: this.state.config.llm_model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a research analyst. Be skeptical of hype. Evaluate each signal independently. Output valid JSON only.",
+          },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+      });
+
+      const usage = response.usage;
+      if (usage) {
+        this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
+      }
+
+      // Parse response - handle both { results: [...] } and bare array
+      const content = response.content || "{}";
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:response',message:'llm_response',data:{contentLength:content.length,contentPreview:content.slice(0,500),tokens:response.usage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
+      const parsed = JSON.parse(content.replace(/```json\n?|```/g, "").trim());
+      const resultsArray: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.results) ? parsed.results : [];
+
+      const validVerdicts = ["BUY", "SKIP", "WAIT"];
+      const batchResults: ResearchResult[] = [];
+
+      for (let i = 0; i < uncached.length; i++) {
+        const sig = uncached[i]!;
+        // Match by index or by symbol name
+        const entry = (resultsArray[i] as Record<string, unknown>) ??
+          (resultsArray.find((r) => (r as Record<string, unknown>)?.symbol === sig.symbol) as Record<string, unknown>);
+
+        if (!entry || !validVerdicts.includes(entry.verdict as string)) {
+          this.log("SignalResearch", "batch_invalid_entry", {
+            symbol: sig.symbol,
+            index: i,
+            reason: entry ? "Invalid verdict" : "Missing from response",
+          });
+          continue;
+        }
+
+        const result: ResearchResult = {
+          symbol: sig.symbol,
+          verdict: entry.verdict as "BUY" | "SKIP" | "WAIT",
+          confidence: typeof entry.confidence === "number" ? entry.confidence : 0.3,
+          entry_quality: (entry.entry_quality as ResearchResult["entry_quality"]) || "poor",
+          reasoning: (entry.reasoning as string) || "No reasoning provided",
+          red_flags: Array.isArray(entry.red_flags) ? (entry.red_flags as string[]) : [],
+          catalysts: Array.isArray(entry.catalysts) ? (entry.catalysts as string[]) : [],
+          timestamp: now,
+        };
+
+        this.state.signalResearch[sig.symbol] = result;
+        batchResults.push(result);
+
+        this.log("SignalResearch", "signal_researched", {
+          symbol: result.symbol,
+          verdict: result.verdict,
+          confidence: result.confidence,
+          quality: result.entry_quality,
+        });
+
+        if (result.verdict === "BUY") {
+          await this.sendDiscordNotification("research", {
+            symbol: result.symbol,
+            verdict: result.verdict,
+            confidence: result.confidence,
+            quality: result.entry_quality,
+            sentiment: sig.sentiment,
+            sources: sig.sources,
+            reasoning: result.reasoning,
+            catalysts: result.catalysts,
+            red_flags: result.red_flags,
+          });
+        }
+      }
+
+      this.log("SignalResearch", "batch_complete", {
+        requested: uncached.length,
+        received: resultsArray.length,
+        valid: batchResults.length,
+        cached: cached.length,
+      });
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:done',message:'batch_done',data:{requested:uncached.length,received:resultsArray.length,valid:batchResults.length,cached:cached.length,verdicts:batchResults.map(r=>({s:r.symbol,v:r.verdict,c:r.confidence}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+      // #endregion
+
+      return [...cached, ...batchResults];
+    } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:error',message:'batch_failed',data:{error:String(error).slice(0,300)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
+      this.log("SignalResearch", "batch_error", {
+        message: String(error),
+        signalCount: uncached.length,
+        symbols: uncached.map((s) => s.symbol),
+      });
+
+      // Fallback: try individual calls sequentially
+      this.log("SignalResearch", "batch_fallback_to_sequential", { count: uncached.length });
+      const fallbackResults: ResearchResult[] = [...cached];
+      for (const sig of uncached) {
+        const result = await this.researchSignal(sig.symbol, sig.sentiment, sig.sources);
+        if (result) fallbackResults.push(result);
+      }
+      return fallbackResults;
+    }
+  }
+
   private async researchTopSignals(limit = 5): Promise<ResearchResult[]> {
     const alpaca = createAlpacaProviders(this.env);
     const positions = await alpaca.trading.getPositions();
@@ -2419,6 +2809,7 @@ JSON response:
 
     this.log("SignalResearch", "researching_signals", { count: candidates.length });
 
+    // Aggregate signals by symbol (combine sources for the same ticker)
     const aggregated = new Map<string, { symbol: string; sentiment: number; sources: string[] }>();
     for (const sig of candidates) {
       if (!aggregated.has(sig.symbol)) {
@@ -2428,21 +2819,9 @@ JSON response:
       }
     }
 
-    // Free-tier models have strict rate limits (e.g. 8 RPM on OpenRouter).
-    // Use longer delays between calls to avoid hammering the API.
-    const isFreeModel = this.state.config.llm_model.includes(":free") || this.state.config.llm_model.includes("/free");
-    const delayBetweenCalls = isFreeModel ? 8_000 : 500;
-
-    const results: ResearchResult[] = [];
-    for (const [symbol, data] of aggregated) {
-      const analysis = await this.researchSignal(symbol, data.sentiment, data.sources);
-      if (analysis) {
-        results.push(analysis);
-      }
-      await this.sleep(delayBetweenCalls);
-    }
-
-    return results;
+    // Batch all signals into a single LLM call for efficiency
+    const batchInput = Array.from(aggregated.values());
+    return this.researchSignalsBatch(batchInput);
   }
 
   private async researchPosition(

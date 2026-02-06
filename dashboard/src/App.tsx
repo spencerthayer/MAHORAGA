@@ -9,6 +9,7 @@ import { SetupWizard } from './components/SetupWizard'
 import { LineChart, Sparkline } from './components/LineChart'
 import { NotificationBell } from './components/NotificationBell'
 import { Tooltip, TooltipContent } from './components/Tooltip'
+import { CrtEffect } from './components/CrtEffect'
 import type { Status, Config, LogEntry, Signal, Position, SignalResearch, PortfolioSnapshot } from './types'
 
 const API_BASE = '/api'
@@ -119,6 +120,7 @@ export default function App() {
   const [time, setTime] = useState(new Date())
   const [portfolioHistory, setPortfolioHistory] = useState<PortfolioSnapshot[]>([])
   const [portfolioPeriod, setPortfolioPeriod] = useState<'1D' | '1W' | '1M'>('1D')
+  const [crtEnabled, setCrtEnabled] = useState(() => localStorage.getItem('mahoraga_crt') === 'true')
 
   useEffect(() => {
     const checkSetup = async () => {
@@ -332,6 +334,20 @@ export default function App() {
       <div className="max-w-[1920px] mx-auto p-4">
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 pb-3 border-b border-hud-line relative after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1px] after:neon-stripe after:opacity-40">
           <div className="flex items-center gap-4 md:gap-6">
+            <button
+              onClick={() => {
+                const next = !crtEnabled
+                setCrtEnabled(next)
+                localStorage.setItem('mahoraga_crt', String(next))
+              }}
+              className={clsx(
+                'hud-label transition-colors hover:text-hud-primary',
+                crtEnabled && 'crt-toggle-active'
+              )}
+              title={crtEnabled ? 'Disable CRT effect' : 'Enable CRT effect'}
+            >
+              [CRT]
+            </button>
             <div className="flex items-baseline gap-2">
               <span className="text-xl md:text-2xl font-light tracking-tight text-hud-text-bright hud-title-glow">
                 MAHORAGA
@@ -893,6 +909,8 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <CrtEffect enabled={crtEnabled} />
     </div>
   )
 }

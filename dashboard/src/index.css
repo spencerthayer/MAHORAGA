@@ -259,3 +259,101 @@
     text-shadow: 0 0 6px rgba(54, 249, 246, 0.3);
   }
 }
+
+/* ═══════════════════════════════════════════
+   CRT EFFECT OVERLAYS
+   Inspired by CRTFilter.js (Ichiaka/CRTFilter)
+   All overlays are pointer-events:none and z-indexed
+   above content so they don't block interaction.
+   ═══════════════════════════════════════════ */
+
+/* ── Flicker — subtle brightness pulse on the whole page ── */
+html.crt-active {
+  animation: crt-flicker 0.12s infinite;
+}
+
+@keyframes crt-flicker {
+  0%   { filter: brightness(0.97) contrast(1.01); }
+  25%  { filter: brightness(0.99) contrast(1.00); }
+  50%  { filter: brightness(0.96) contrast(1.02); }
+  75%  { filter: brightness(1.00) contrast(1.00); }
+  100% { filter: brightness(0.98) contrast(1.01); }
+}
+
+/* ── Scanlines — thin horizontal bars ── */
+.crt-scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  /* Slow scroll for retrace effect */
+  animation: crt-scanline-scroll 8s linear infinite;
+}
+
+@keyframes crt-scanline-scroll {
+  from { background-position: 0 0; }
+  to   { background-position: 0 100vh; }
+}
+
+/* ── Vignette — CRT edge darkening ── */
+.crt-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 9991;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(0, 0, 0, 0.35) 85%,
+    rgba(0, 0, 0, 0.6) 100%
+  );
+}
+
+/* ── Static noise — tiled texture, animated via CSS ── */
+.crt-noise {
+  position: fixed;
+  inset: 0;
+  z-index: 9992;
+  pointer-events: none;
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  opacity: 0.6;
+  animation: crt-noise-shift 0.15s steps(6) infinite;
+}
+
+@keyframes crt-noise-shift {
+  0%   { background-position: 0 0; }
+  16%  { background-position: -47px -83px; }
+  33%  { background-position: 73px -29px; }
+  50%  { background-position: -61px 57px; }
+  66%  { background-position: 37px -71px; }
+  83%  { background-position: -29px 41px; }
+  100% { background-position: 53px 67px; }
+}
+
+/* ── Chromatic aberration — offset red/blue fringe via box-shadow trick ── */
+.crt-aberration {
+  position: fixed;
+  inset: 0;
+  z-index: 9989;
+  pointer-events: none;
+  /* Two offset shadows: red channel pulled left, blue pulled right */
+  box-shadow:
+    inset  1px 0 1px rgba(254, 68, 80, 0.06),
+    inset -1px 0 1px rgba(3, 237, 249, 0.06);
+}
+
+/* ── CRT toggle button glow when active ── */
+.crt-toggle-active {
+  color: var(--color-hud-primary) !important;
+  text-shadow:
+    0 0 3px rgba(3, 237, 249, 0.6),
+    0 0 8px rgba(3, 237, 249, 0.3);
+}

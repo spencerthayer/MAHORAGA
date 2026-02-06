@@ -534,9 +534,18 @@ export default function App() {
       hour: '2-digit', minute: '2-digit', hour12: false,
     })
 
-    const markers: { index: number; label: string; color?: string }[] = []
+    const markers: { index: number; label: string; color?: string; tooltip?: string[] }[] = []
     let openIndex = -1
     let closeIndex = -1
+
+    const openTooltip = [
+      `US EQUITIES OPEN ${marketOpenET} ET`,
+      'NYSE, NASDAQ, ARCA, AMEX, BATS',
+    ]
+    const closeTooltip = [
+      `US EQUITIES CLOSE ${marketCloseET} ET`,
+      'NYSE, NASDAQ, ARCA, AMEX, BATS',
+    ]
 
     portfolioHistory.forEach((s, i) => {
       const etTime = etFormatter.format(new Date(s.timestamp))
@@ -544,10 +553,10 @@ export default function App() {
 
       if (etMinutes >= openMinutes && etMinutes < openMinutes + 15 && openIndex === -1) {
         openIndex = i
-        markers.push({ index: i, label: 'OPEN', color: 'var(--color-hud-success)' })
+        markers.push({ index: i, label: 'OPEN', color: 'var(--color-hud-success)', tooltip: openTooltip })
       } else if (etMinutes >= closeMinutes && etMinutes < closeMinutes + 15 && closeIndex === -1) {
         closeIndex = i
-        markers.push({ index: i, label: 'CLOSE', color: 'var(--color-hud-error)' })
+        markers.push({ index: i, label: 'CLOSE', color: 'var(--color-hud-error)', tooltip: closeTooltip })
       }
     })
 

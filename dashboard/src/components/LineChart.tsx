@@ -13,6 +13,7 @@ interface ChartMarker {
   index: number
   label: string
   color?: string
+  tooltip?: string[]
 }
 
 interface MarketHoursZone {
@@ -58,6 +59,7 @@ export function LineChart({
   marketHours,
 }: LineChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+  const [hoverMarker, setHoverMarker] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
 
   const viewBoxWidth = 800
@@ -101,7 +103,7 @@ export function LineChart({
     }
   }
 
-  const handleMouseLeave = () => setHoverIndex(null)
+  const handleMouseLeave = () => { setHoverIndex(null); setHoverMarker(null) }
 
   const hoverValue = hoverIndex !== null ? series[0]?.data[hoverIndex] : null
   const hoverLabel = hoverIndex !== null && labels ? labels[hoverIndex] : null
@@ -114,6 +116,7 @@ export function LineChart({
       viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
       preserveAspectRatio="xMidYMid meet"
       className="block"
+      style={{ overflow: 'hidden' }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
@@ -193,29 +196,44 @@ export function LineChart({
         </>
       )}
 
-      {markers && markers.map((marker, i) => (
-        <g key={`marker-${i}`}>
-          <line
-            x1={getX(marker.index)}
-            y1={padding.top}
-            x2={getX(marker.index)}
-            y2={padding.top + chartHeight}
-            stroke={marker.color || 'var(--color-hud-text-dim)'}
-            strokeWidth={1}
-            strokeDasharray="4,4"
-            opacity={0.5}
-          />
-          <text
-            x={getX(marker.index)}
-            y={padding.top - 4}
-            textAnchor="middle"
-            fill={marker.color || 'var(--color-hud-text-dim)'}
-            fontSize={8}
-          >
-            {marker.label}
-          </text>
-        </g>
-      ))}
+      {markers && markers.map((marker, i) => {
+        const mx = getX(marker.index)
+        return (
+          <g key={`marker-${i}`}>
+            <line
+              x1={mx}
+              y1={padding.top}
+              x2={mx}
+              y2={padding.top + chartHeight}
+              stroke={marker.color || 'var(--color-hud-text-dim)'}
+              strokeWidth={1}
+              strokeDasharray="4,4"
+              opacity={0.5}
+            />
+            {/* Invisible wider hit area for hover */}
+            <rect
+              x={mx - 24}
+              y={padding.top - 14}
+              width={48}
+              height={chartHeight + 14}
+              fill="transparent"
+              style={{ cursor: marker.tooltip ? 'pointer' : 'default' }}
+              onMouseEnter={() => marker.tooltip && setHoverMarker(i)}
+              onMouseLeave={() => setHoverMarker(null)}
+            />
+            <text
+              x={mx}
+              y={padding.top - 4}
+              textAnchor="middle"
+              fill={marker.color || 'var(--color-hud-text-dim)'}
+              fontSize={8}
+              style={{ pointerEvents: 'none' }}
+            >
+              {marker.label}
+            </text>
+          </g>
+        )
+      })}
 
       {series.map((s, seriesIndex) => {
         const colors = variantColors[s.variant ?? variant]
@@ -277,7 +295,7 @@ export function LineChart({
         )
       })}
 
-      {hoverIndex !== null && hoverValue !== null && (() => {
+      {hoverIndex !== null && hoverValue !== null && hoverMarker === null && (() => {
         const hoverX = getX(hoverIndex)
         const hoverY = getY(hoverValue)
         const tooltipWidth = 85
@@ -325,6 +343,55 @@ export function LineChart({
                 </text>
               )}
             </g>
+          </g>
+        )
+      })()}
+
+      {/* Marker tooltip - rendered last so it's always on top of chart lines */}
+      {hoverMarker !== null && markers?.[hoverMarker]?.tooltip && (() => {
+        const marker = markers[hoverMarker]
+        const tooltip = marker.tooltip!
+        const mx = getX(marker.index)
+        const lineHeight = 14
+        const tooltipPadX = 10
+        const tooltipPadY = 8
+        // Measure width: ~6px per char at 9px monospace is reliable
+        const charW = 6
+        const longestLine = Math.max(...tooltip.map(l => l.length))
+        const tooltipW = Math.ceil(longestLine * charW) + tooltipPadX * 2
+        const tooltipH = tooltipPadY * 2 + tooltip.length * lineHeight
+        // Vertical: just below the marker label text
+        const ty = padding.top + 2
+        // Horizontal: prefer right of marker line, flip left if near edge
+        const nearRight = mx + tooltipW + 12 > viewBoxWidth - padding.right
+        const nearLeft = mx - tooltipW - 8 < padding.left
+        const tx = nearRight && !nearLeft ? mx - tooltipW - 8 : mx + 8
+
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <rect
+              x={tx}
+              y={ty}
+              width={tooltipW}
+              height={tooltipH}
+              fill="rgba(13, 17, 23, 0.85)"
+              stroke={marker.color || 'var(--color-hud-line)'}
+              strokeWidth={1}
+              rx={3}
+            />
+            {tooltip.map((line, j) => (
+              <text
+                key={j}
+                x={tx + tooltipPadX}
+                y={ty + tooltipPadY + (j + 1) * lineHeight - 3}
+                fill={j === 0 ? (marker.color || 'var(--color-hud-text)') : 'var(--color-hud-text-dim)'}
+                fontSize={9}
+                fontWeight={j === 0 ? 600 : 400}
+                fontFamily="monospace"
+              >
+                {line}
+              </text>
+            ))}
           </g>
         )
       })()}

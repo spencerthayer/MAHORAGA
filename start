@@ -19,7 +19,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$PROJECT_ROOT/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date +%s).log"
-exec > >(tee "$LOG_FILE") 2>&1
+exec > >(tee >(perl -MPOSIX -pe 'BEGIN{$|=1} $_ = strftime("[%Y-%m-%d %H:%M:%S] ", localtime) . $_' > "$LOG_FILE")) 2>&1
 
 clear
 echo "Current directory: $(pwd)"

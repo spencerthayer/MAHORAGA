@@ -151,10 +151,10 @@ echo "  Press Ctrl+C to stop all services"
 echo "──────────────────────────────────────────────────────────"
 echo ""
 
-if command -v firefox-developer-edition >/dev/null 2>&1; then
-  firefox-developer-edition --new-window "http://localhost:$DASHBOARD_PORT" &
+if [[ -d "/Applications/Firefox Developer Edition.app" ]]; then
+  open -a "Firefox Developer Edition" "http://localhost:$DASHBOARD_PORT" &
 else
-  echo "Firefox Developer Edition app not found. Please ensure it is installed, or open http://localhost:$DASHBOARD_PORT manually."
+  echo "Firefox Developer Edition not found. Please open http://localhost:$DASHBOARD_PORT manually."
 fi
 
 

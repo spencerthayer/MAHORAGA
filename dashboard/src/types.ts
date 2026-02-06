@@ -1,5 +1,6 @@
 export interface Account {
   equity: number
+  last_equity: number
   cash: number
   buying_power: number
   portfolio_value: number

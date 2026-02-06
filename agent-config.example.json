@@ -12,7 +12,5 @@
   "position_size_pct_of_cash": 25,
   
   "llm_model": "gpt-4o-mini",
-  "llm_analyst_model": "gpt-4o",
-  
-  "starting_equity": 100000
+  "llm_analyst_model": "gpt-4o"
 }

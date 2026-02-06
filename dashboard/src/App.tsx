@@ -207,6 +207,10 @@ export default function App() {
   const realizedPl = totalPl - unrealizedPl
   const totalPlPct = account ? (totalPl / startingEquity) * 100 : 0
 
+  // Daily P&L from Alpaca's last_equity (previous day close)
+  const dailyPl = account?.last_equity ? account.equity - account.last_equity : 0
+  const dailyPlPct = account?.last_equity ? (dailyPl / account.last_equity) * 100 : 0
+
   // Color palette for position lines (distinct colors for each stock)
   const positionColors = ['cyan', 'purple', 'yellow', 'blue', 'green'] as const
 
@@ -395,6 +399,12 @@ export default function App() {
                     <Metric label="BUYING POWER" value={formatCurrency(account.buying_power)} size="md" />
                   </div>
                   <div className="pt-2 border-t border-hud-line space-y-2">
+                    <Metric 
+                      label="DAILY P&L" 
+                      value={`${formatCurrency(dailyPl)} (${formatPercent(dailyPlPct)})`}
+                      size="md"
+                      color={dailyPl >= 0 ? 'success' : 'error'}
+                    />
                     <Metric 
                       label="TOTAL P&L" 
                       value={`${formatCurrency(totalPl)} (${formatPercent(totalPlPct)})`}
@@ -592,7 +602,7 @@ export default function App() {
               {portfolioChartData.length > 1 ? (
                 <div className="h-full w-full">
                   <LineChart
-                    series={[{ label: 'Equity', data: portfolioChartData, variant: totalPl >= 0 ? 'green' : 'red' }]}
+                    series={[{ label: 'Equity', data: portfolioChartData, variant: dailyPl >= 0 ? 'green' : 'red' }]}
                     labels={portfolioChartLabels}
                     showArea={true}
                     showGrid={true}

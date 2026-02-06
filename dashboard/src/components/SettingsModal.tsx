@@ -386,13 +386,24 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="hud-label block mb-1">Starting Equity ($)</label>
-                <input
-                  type="number"
-                  className="hud-input w-full"
-                  value={localConfig.starting_equity || 100000}
-                  onChange={e => handleChange('starting_equity', Number(e.target.value))}
-                />
-                <p className="text-xs text-hud-text-dim mt-1">For P&L calculation</p>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    className="hud-input flex-1"
+                    value={localConfig.starting_equity || ''}
+                    onChange={e => handleChange('starting_equity', Number(e.target.value))}
+                    placeholder="Auto-derived from Alpaca"
+                  />
+                  <button
+                    type="button"
+                    className="hud-btn text-xs px-2 whitespace-nowrap"
+                    onClick={() => handleChange('starting_equity', 0)}
+                    title="Clear and re-derive from Alpaca portfolio history"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <p className="text-xs text-hud-text-dim mt-1">Derived from Alpaca portfolio history. Reset to re-fetch, or override manually.</p>
               </div>
             </div>
           </div>

@@ -104,6 +104,9 @@ interface AgentConfig {
 
   // Allowed exchanges - only trade stocks listed on these exchanges (avoids OTC data issues)
   allowed_exchanges: string[];
+
+  // P&L calculation - auto-captured from Alpaca on first run
+  starting_equity?: number; // Auto-set from Alpaca account equity on first status call
 }
 
 // [CUSTOMIZABLE] Add fields here when you add new data sources
@@ -1126,6 +1129,20 @@ export class MahoragaHarness extends DurableObject<Env> {
           entry.peak_price = Math.max(entry.peak_price, pos.current_price);
         }
       }
+
+      // Auto-capture starting equity from Alpaca's portfolio history base_value
+      if (account && !this.state.config.starting_equity) {
+        try {
+          const history = await alpaca.trading.getPortfolioHistory({ period: "all", timeframe: "1D" });
+          if (history.base_value > 0) {
+            this.state.config.starting_equity = history.base_value;
+            await this.persist();
+            console.log(`[MahoragaHarness] Captured starting_equity from Alpaca portfolio history: $${history.base_value}`);
+          }
+        } catch (e) {
+          console.log(`[MahoragaHarness] Failed to fetch portfolio history for starting_equity: ${e}`);
+        }
+      }
     } catch (_e) {
       // Ignore - will return null
     }
@@ -1155,6 +1172,11 @@ export class MahoragaHarness extends DurableObject<Env> {
 
   private async handleUpdateConfig(request: Request): Promise<Response> {
     const body = (await request.json()) as Partial<AgentConfig>;
+    // Allow clearing starting_equity by sending 0/null so it re-derives from Alpaca
+    if (body.starting_equity === 0 || body.starting_equity === null) {
+      delete this.state.config.starting_equity;
+      delete (body as Record<string, unknown>).starting_equity;
+    }
     this.state.config = { ...this.state.config, ...body };
     this.initializeLLM();
     await this.persist();

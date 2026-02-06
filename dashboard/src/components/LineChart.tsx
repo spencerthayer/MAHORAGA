@@ -91,10 +91,15 @@ export function LineChart({
   })
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return
-    const rect = svgRef.current.getBoundingClientRect()
-    const scaleX = viewBoxWidth / rect.width
-    const x = (e.clientX - rect.left) * scaleX
+    const svg = svgRef.current
+    if (!svg) return
+    const ctm = svg.getScreenCTM()
+    if (!ctm) return
+    const pt = svg.createSVGPoint()
+    pt.x = e.clientX
+    pt.y = e.clientY
+    const svgPt = pt.matrixTransform(ctm.inverse())
+    const x = svgPt.x
     const index = getIndexFromX(x)
     if (index >= 0 && index < maxPoints) {
       setHoverIndex(index)
@@ -116,7 +121,7 @@ export function LineChart({
       viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
       preserveAspectRatio="xMidYMid meet"
       className="block"
-      style={{ overflow: 'hidden' }}
+      style={{ overflow: 'hidden', cursor: 'crosshair' }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >

@@ -137,38 +137,53 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
         </span>
       </button>
 
-      {/* Dropdown */}
+      {/* Fullscreen overlay dropdown */}
       {isOpen && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 hud-panel border border-hud-line shadow-lg">
-          {/* Search + sort bar */}
-          <div className="flex items-center gap-2 p-2 border-b border-hud-line/50">
-            <input
-              type="text"
-              className="hud-input flex-1"
-              placeholder="Filter models..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              autoFocus
-            />
-            <button
-              type="button"
-              className="hud-label shrink-0 hover:text-hud-primary transition-colors px-2 py-1"
-              onClick={cycleSortMode}
-              title="Cycle sort: price asc, price desc, name"
-            >
-              {sortLabel}
-            </button>
-          </div>
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) { setIsOpen(false); setFilter('') } }}
+        >
+          <div className="w-full max-w-2xl max-h-[80vh] flex flex-col hud-panel border border-hud-line shadow-lg">
+            {/* Header */}
+            <div className="flex items-center justify-between p-3 border-b border-hud-line/50 shrink-0">
+              <span className="hud-label text-hud-primary">{label}</span>
+              <button
+                type="button"
+                className="hud-label hover:text-hud-primary transition-colors"
+                onClick={() => { setIsOpen(false); setFilter('') }}
+              >
+                [CLOSE]
+              </button>
+            </div>
 
-          {/* Model count */}
-          <div className="px-2 py-1 border-b border-hud-line/30">
-            <span className="text-[9px] text-hud-text-dim">
-              {filteredModels.length} of {models.length} models
-            </span>
-          </div>
+            {/* Search + sort bar */}
+            <div className="flex items-center gap-2 p-3 border-b border-hud-line/50 shrink-0">
+              <input
+                type="text"
+                className="hud-input flex-1"
+                placeholder="Filter models..."
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                autoFocus
+              />
+              <button
+                type="button"
+                className="hud-label shrink-0 hover:text-hud-primary transition-colors px-2 py-1"
+                onClick={cycleSortMode}
+                title="Cycle sort: price asc, price desc, name"
+              >
+                {sortLabel}
+              </button>
+            </div>
 
-          {/* Model list */}
-          <div ref={listRef} className="max-h-64 overflow-y-auto">
+            {/* Model count */}
+            <div className="px-3 py-1 border-b border-hud-line/30 shrink-0">
+              <span className="text-[9px] text-hud-text-dim">
+                {filteredModels.length} of {models.length} models
+              </span>
+            </div>
+
+            {/* Model list */}
+            <div ref={listRef} className="flex-1 overflow-y-auto min-h-0">
             {filteredModels.length === 0 ? (
               <div className="p-3 text-center text-hud-text-dim text-xs">
                 No models match "{filter}"
@@ -231,11 +246,12 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
             )}
           </div>
 
-          {/* Footer */}
-          <div className="px-2 py-1 border-t border-hud-line/50">
-            <span className="text-[8px] text-hud-text-dim">
-              Combined price (in + out) per 1M tokens in USD
-            </span>
+            {/* Footer */}
+            <div className="px-3 py-2 border-t border-hud-line/50 shrink-0">
+              <span className="text-[8px] text-hud-text-dim">
+                Combined price (in + out) per 1M tokens in USD
+              </span>
+            </div>
           </div>
         </div>
       )}

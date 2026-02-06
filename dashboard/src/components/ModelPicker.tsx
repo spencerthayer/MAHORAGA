@@ -140,9 +140,9 @@ export function ModelPicker({ models, loading, error, value, onChange, label }: 
       {/* Fullscreen overlay dropdown */}
       {isOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) { setIsOpen(false); setFilter('') } }}
+          onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) { setIsOpen(false); setFilter('') } }}
         >
-          <div className="w-full max-w-2xl max-h-[80vh] flex flex-col hud-panel border border-hud-line shadow-lg">
+          <div className="w-full max-w-2xl max-h-[80vh] flex flex-col hud-panel border border-hud-line shadow-lg" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between p-3 border-b border-hud-line/50 shrink-0">
               <span className="hud-label text-hud-primary">{label}</span>

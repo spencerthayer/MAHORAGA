@@ -39,6 +39,23 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
+free_port() {
+  local port=$1
+  local pids
+  pids=$(lsof -ti :"$port" 2>/dev/null || true)
+  if [[ -n "$pids" ]]; then
+    echo "  ⚠️  Port $port in use by PID(s): $pids — killing..."
+    echo "$pids" | xargs kill -9 2>/dev/null || true
+    sleep 1
+    # Verify the port is actually free now
+    if lsof -ti :"$port" >/dev/null 2>&1; then
+      echo "  ❌ Failed to free port $port"
+      return 1
+    fi
+    echo "  ✅ Port $port freed"
+  fi
+}
+
 wait_for_port() {
   local port=$1
   local name=$2
@@ -81,14 +98,26 @@ if [[ ! -d "$PROJECT_ROOT/dashboard/node_modules" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Start services
+# Free ports if already in use
 # ---------------------------------------------------------------------------
 
 MODE="${1:-all}"
 
+if [[ "$MODE" == "all" || "$MODE" == "backend" ]]; then
+  free_port "$BACKEND_PORT"
+fi
+
+if [[ "$MODE" == "all" || "$MODE" == "dashboard" ]]; then
+  free_port "$DASHBOARD_PORT"
+fi
+
+# ---------------------------------------------------------------------------
+# Start services
+# ---------------------------------------------------------------------------
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
-echo "║              MAHORAGA — Development Server              ║"
+echo "║              MAHORAGA — Development Server               ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -121,5 +150,12 @@ echo "────────────────────────�
 echo "  Press Ctrl+C to stop all services"
 echo "──────────────────────────────────────────────────────────"
 echo ""
+
+if command -v firefox-developer-edition >/dev/null 2>&1; then
+  firefox-developer-edition --new-window "http://localhost:$DASHBOARD_PORT" &
+else
+  echo "Firefox Developer Edition app not found. Please ensure it is installed, or open http://localhost:$DASHBOARD_PORT manually."
+fi
+
 
 wait

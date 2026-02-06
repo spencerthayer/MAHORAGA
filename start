@@ -8,15 +8,25 @@
 #   ./start dashboard    # dashboard only
 # ============================================================================
 
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ---------------------------------------------------------------------------
+# Session logging — mirror all output to logs/<unix-timestamp>.log
+# ---------------------------------------------------------------------------
+
+LOG_DIR="$PROJECT_ROOT/logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/$(date +%s).log"
+exec > >(tee "$LOG_FILE") 2>&1
+
 clear
 echo "Current directory: $(pwd)"
 echo "Command: ./start"
 echo "Starting Mahoraga... $(date)"
+echo "Log file: $LOG_FILE"
 echo "------------------------------------------------"
-
-set -euo pipefail
-
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BACKEND_PORT="${WRANGLER_PORT:-8787}"
 DASHBOARD_PORT=3000
@@ -34,6 +44,9 @@ cleanup() {
   if [[ -n "${DASHBOARD_PID:-}" ]]; then
     kill "$DASHBOARD_PID" 2>/dev/null && echo "  Stopped dashboard (PID $DASHBOARD_PID)"
   fi
+  echo "Session log saved to: $LOG_FILE"
+  # Allow tee to flush remaining output
+  sleep 0.5
   exit 0
 }
 

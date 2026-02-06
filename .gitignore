@@ -12,6 +12,9 @@
 wrangler.jsonc
 !wrangler.example.jsonc
 
+# Generated data files
+scripts/openrouter-models.json
+
 # Agent runtime files (contain personal trading data)
 agent-config.json
 agent-logs.json

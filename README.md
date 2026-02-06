@@ -2,7 +2,7 @@
 
 # MAHORAGA
 
-An autonomous, LLM-powered trading agent that runs 24/7 on Cloudflare Workers.
+An autonomous, LLM-powered trading agent that runs 24/7 on Cloudflare Workers. (This is highly modified.)
 
 [![Discord](https://img.shields.io/discord/1467592472158015553?color=7289da&label=Discord&logo=discord&logoColor=white)](https://discord.gg/vMFnHe2YBh)
 

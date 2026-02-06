@@ -696,8 +696,19 @@ export default function App() {
                   <div className="text-hud-text-dim text-sm py-4 text-center">Researching candidates...</div>
                 ) : (
                   Object.entries(status?.signalResearch || {})
-                    .sort(([, a], [, b]) => b.timestamp - a.timestamp)
-                    .map(([symbol, research]: [string, SignalResearch]) => (
+                    .sort(([, a], [, b]) => (b.timestamp || 0) - (a.timestamp || 0))
+                    .map(([symbol, raw]: [string, SignalResearch]) => {
+                    const research = {
+                      verdict: raw.verdict || 'WAIT',
+                      confidence: raw.confidence ?? 0,
+                      entry_quality: raw.entry_quality || 'fair',
+                      reasoning: raw.reasoning || '',
+                      red_flags: raw.red_flags || [],
+                      catalysts: raw.catalysts || [],
+                      sentiment: raw.sentiment ?? 0,
+                      timestamp: raw.timestamp || 0,
+                    }
+                    return (
                     <Tooltip
                       key={symbol}
                       position="left"
@@ -775,7 +786,7 @@ export default function App() {
                         )}
                       </motion.div>
                     </Tooltip>
-                  ))
+                  )})
                 )}
               </div>
             </Panel>

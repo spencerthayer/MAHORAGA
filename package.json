@@ -20,6 +20,9 @@
     "check:fix": "biome check --write src/",
     "test": "vitest",
     "test:run": "vitest run",
+    "start": "bash scripts/start.sh",
+    "start:backend": "bash scripts/start.sh backend",
+    "start:dashboard": "bash scripts/start.sh dashboard",
     "setup:access": "npx tsx scripts/setup-access.ts",
     "test:alpaca": "npx tsx scripts/test-alpaca.ts"
   },

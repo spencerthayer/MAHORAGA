@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# ============================================================================
+# start.sh — Start the Mahoraga backend and dashboard
+#
+# Usage:
+#   ./scripts/start.sh          # start both
+#   ./scripts/start.sh backend  # backend only
+#   ./scripts/start.sh dashboard # dashboard only
+# ============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+BACKEND_PORT="${WRANGLER_PORT:-8787}"
+DASHBOARD_PORT=3000
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+cleanup() {
+  echo ""
+  echo "Shutting down..."
+  if [[ -n "${BACKEND_PID:-}" ]]; then
+    kill "$BACKEND_PID" 2>/dev/null && echo "  Stopped backend (PID $BACKEND_PID)"
+  fi
+  if [[ -n "${DASHBOARD_PID:-}" ]]; then
+    kill "$DASHBOARD_PID" 2>/dev/null && echo "  Stopped dashboard (PID $DASHBOARD_PID)"
+  fi
+  exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+wait_for_port() {
+  local port=$1
+  local name=$2
+  local max_wait=30
+  local waited=0
+
+  while ! curl -s --max-time 1 "http://localhost:$port" >/dev/null 2>&1; do
+    sleep 1
+    waited=$((waited + 1))
+    if [[ $waited -ge $max_wait ]]; then
+      echo "  ❌ $name did not start within ${max_wait}s"
+      return 1
+    fi
+  done
+  echo "  ✅ $name ready on http://localhost:$port"
+}
+
+# ---------------------------------------------------------------------------
+# Preflight checks
+# ---------------------------------------------------------------------------
+
+if [[ ! -f "$PROJECT_ROOT/.dev.vars" ]]; then
+  echo "❌ Missing .dev.vars — run: cp .env.example .dev.vars"
+  exit 1
+fi
+
+if [[ ! -f "$PROJECT_ROOT/wrangler.jsonc" ]]; then
+  echo "❌ Missing wrangler.jsonc — run: cp wrangler.example.jsonc wrangler.jsonc"
+  exit 1
+fi
+
+if [[ ! -d "$PROJECT_ROOT/node_modules" ]]; then
+  echo "Installing backend dependencies..."
+  (cd "$PROJECT_ROOT" && npm install)
+fi
+
+if [[ ! -d "$PROJECT_ROOT/dashboard/node_modules" ]]; then
+  echo "Installing dashboard dependencies..."
+  (cd "$PROJECT_ROOT/dashboard" && npm install)
+fi
+
+# ---------------------------------------------------------------------------
+# Start services
+# ---------------------------------------------------------------------------
+
+MODE="${1:-all}"
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║              MAHORAGA — Development Server              ║"
+echo "╚══════════════════════════════════════════════════════════╝"
+echo ""
+
+BACKEND_PID=""
+DASHBOARD_PID=""
+
+if [[ "$MODE" == "all" || "$MODE" == "backend" ]]; then
+  echo "Starting backend (Wrangler) on port $BACKEND_PORT..."
+  (cd "$PROJECT_ROOT" && npm run dev) &
+  BACKEND_PID=$!
+  wait_for_port "$BACKEND_PORT" "Backend"
+fi
+
+if [[ "$MODE" == "all" || "$MODE" == "dashboard" ]]; then
+  echo "Starting dashboard (Vite) on port $DASHBOARD_PORT..."
+  (cd "$PROJECT_ROOT/dashboard" && npm run dev) &
+  DASHBOARD_PID=$!
+  wait_for_port "$DASHBOARD_PORT" "Dashboard"
+fi
+
+echo ""
+echo "──────────────────────────────────────────────────────────"
+if [[ -n "$BACKEND_PID" ]]; then
+  echo "  Backend:    http://localhost:$BACKEND_PORT"
+fi
+if [[ -n "$DASHBOARD_PID" ]]; then
+  echo "  Dashboard:  http://localhost:$DASHBOARD_PORT"
+fi
+echo "──────────────────────────────────────────────────────────"
+echo "  Press Ctrl+C to stop all services"
+echo "──────────────────────────────────────────────────────────"
+echo ""
+
+wait

@@ -947,6 +947,7 @@ export default function App() {
                     formatValue={(v) => `$${(v / 1000).toFixed(1)}k`}
                     markers={marketMarkers}
                     marketHours={marketHoursZone}
+                    showChartTypeToggle={true}
                   />
                 </div>
               ) : (

@@ -21,6 +21,15 @@ interface MarketHoursZone {
   closeIndex: number
 }
 
+export type ChartViewMode = 'line' | 'candle' | 'both'
+
+interface OHLC {
+  open: number
+  high: number
+  low: number
+  close: number
+}
+
 interface LineChartProps {
   series: LineChartSeries[]
   labels?: string[]
@@ -33,6 +42,8 @@ interface LineChartProps {
   formatValue?: (value: number) => string
   markers?: ChartMarker[]
   marketHours?: MarketHoursZone
+  /** When true, shows Line / Candle / Both toggle and candlestick layer (5-min) under the line */
+  showChartTypeToggle?: boolean
 }
 
 const variantColors: Record<ChartVariant, { stroke: string; fill: string }> = {
@@ -43,6 +54,22 @@ const variantColors: Record<ChartVariant, { stroke: string; fill: string }> = {
   red: { stroke: 'var(--color-hud-red)', fill: 'var(--color-hud-red)' },
   purple: { stroke: 'var(--color-hud-purple)', fill: 'var(--color-hud-purple)' },
   primary: { stroke: 'var(--color-hud-primary)', fill: 'var(--color-hud-primary)' },
+}
+
+/** Build 5-min OHLC candles from 15-min line data (3 candles per interval). */
+function deriveFiveMinCandles(lineData: number[]): OHLC[] {
+  if (lineData.length < 2) return []
+  const candles: OHLC[] = []
+  for (let i = 0; i < lineData.length - 1; i++) {
+    const a = lineData[i]
+    const b = lineData[i + 1]
+    const mid1 = a * 2 / 3 + b * 1 / 3
+    const mid2 = a * 1 / 3 + b * 2 / 3
+    candles.push({ open: a, high: Math.max(a, mid1), low: Math.min(a, mid1), close: mid1 })
+    candles.push({ open: mid1, high: Math.max(mid1, mid2), low: Math.min(mid1, mid2), close: mid2 })
+    candles.push({ open: mid2, high: Math.max(mid2, b), low: Math.min(mid2, b), close: b })
+  }
+  return candles
 }
 
 export function LineChart({
@@ -57,9 +84,11 @@ export function LineChart({
   formatValue,
   markers,
   marketHours,
+  showChartTypeToggle = false,
 }: LineChartProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [hoverMarker, setHoverMarker] = useState<number | null>(null)
+  const [viewMode, setViewMode] = useState<ChartViewMode>('both')
   const svgRef = useRef<SVGSVGElement>(null)
 
   const viewBoxWidth = 800
@@ -68,20 +97,39 @@ export function LineChart({
   const chartWidth = viewBoxWidth - padding.left - padding.right
   const chartHeight = viewBoxHeight - padding.top - padding.bottom
 
+  const lineData = series[0]?.data ?? []
+  const maxPoints = Math.max(...series.map((s) => s.data.length), 1)
+  const candleData = showChartTypeToggle && lineData.length >= 2 ? deriveFiveMinCandles(lineData) : []
+  const candleCount = candleData.length
+
   const allValues = series.flatMap((s) => s.data)
-  const dataMin = Math.min(...allValues)
-  const dataMax = Math.max(...allValues)
+  const candleExtrema = candleData.length > 0
+    ? { min: Math.min(...candleData.map((c) => c.low)), max: Math.max(...candleData.map((c) => c.high)) }
+    : null
+  const dataMin = candleExtrema && (viewMode === 'candle' || viewMode === 'both')
+    ? Math.min(Math.min(...allValues), candleExtrema.min)
+    : Math.min(...allValues)
+  const dataMax = candleExtrema && (viewMode === 'candle' || viewMode === 'both')
+    ? Math.max(Math.max(...allValues), candleExtrema.max)
+    : Math.max(...allValues)
   const range = dataMax - dataMin || 1
   const minValue = dataMin - range * 0.05
   const maxValue = dataMax + range * 0.05
   const valueRange = maxValue - minValue || 1
 
-  const maxPoints = Math.max(...series.map((s) => s.data.length), 1)
-
   const getX = (index: number) => padding.left + (index / (maxPoints - 1 || 1)) * chartWidth
+  const getXCandle = (candleIndex: number) =>
+    candleCount > 1
+      ? padding.left + (candleIndex / (candleCount - 1)) * chartWidth
+      : padding.left + chartWidth / 2
   const getY = (value: number) => padding.top + chartHeight - ((value - minValue) / valueRange) * chartHeight
-  const getIndexFromX = (x: number) => Math.round(((x - padding.left) / chartWidth) * (maxPoints - 1))
-
+  const getIndexFromX = (x: number) => {
+    if (viewMode === 'candle' && candleCount > 0) {
+      const candleIndex = Math.round(((x - padding.left) / chartWidth) * (candleCount - 1))
+      return Math.max(0, Math.min(candleIndex, candleCount - 1))
+    }
+    return Math.round(((x - padding.left) / chartWidth) * (maxPoints - 1))
+  }
   const gridLines = 4
   const gridValues = Array.from({ length: gridLines }, (_, i) => minValue + (valueRange / (gridLines - 1)) * i)
 
@@ -101,19 +149,34 @@ export function LineChart({
     const svgPt = pt.matrixTransform(ctm.inverse())
     const x = svgPt.x
     const index = getIndexFromX(x)
-    if (index >= 0 && index < maxPoints) {
-      setHoverIndex(index)
+    if (viewMode === 'candle') {
+      if (index >= 0 && index < candleCount) setHoverIndex(index)
+      else setHoverIndex(null)
     } else {
-      setHoverIndex(null)
+      if (index >= 0 && index < maxPoints) setHoverIndex(index)
+      else setHoverIndex(null)
     }
   }
 
   const handleMouseLeave = () => { setHoverIndex(null); setHoverMarker(null) }
 
-  const hoverValue = hoverIndex !== null ? series[0]?.data[hoverIndex] : null
-  const hoverLabel = hoverIndex !== null && labels ? labels[hoverIndex] : null
+  const hoverValue =
+    hoverIndex === null
+      ? null
+      : viewMode === 'candle'
+        ? candleData[hoverIndex]?.close ?? null
+        : series[0]?.data[hoverIndex] ?? null
+  const hoverLabel =
+    hoverIndex === null
+      ? null
+      : viewMode === 'candle'
+        ? null
+        : labels?.[hoverIndex] ?? null
+  const hoverX = hoverIndex !== null
+    ? (viewMode === 'candle' ? getXCandle(hoverIndex) : getX(hoverIndex))
+    : 0
 
-  return (
+  const chartContent = (
     <svg
       ref={svgRef}
       width="100%"
@@ -240,7 +303,7 @@ export function LineChart({
         )
       })}
 
-      {series.map((s, seriesIndex) => {
+      {(viewMode === 'line' || viewMode === 'both') && series.map((s, seriesIndex) => {
         const colors = variantColors[s.variant ?? variant]
         const points = s.data.map((value, i) => ({ x: getX(i), y: getY(value) }))
         if (points.length === 0) return null
@@ -272,7 +335,7 @@ export function LineChart({
             <motion.path
               d={pathD}
               fill="none"
-              stroke={colors.stroke}
+              stroke={showChartTypeToggle && viewMode === 'both' ? 'var(--color-hud-dim)' : colors.stroke}
               strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -300,8 +363,30 @@ export function LineChart({
         )
       })}
 
+      {/* Candlestick layer (5-min) — drawn above the line when viewMode is candle or both */}
+      {showChartTypeToggle && candleData.length > 0 && (viewMode === 'candle' || viewMode === 'both') && (
+        <g aria-hidden="true">
+          {candleData.map((c, i) => {
+            const x = getXCandle(i)
+            const cw = Math.max(2, (chartWidth / (candleCount + 1)) * 0.6)
+            const openY = getY(c.open)
+            const closeY = getY(c.close)
+            const highY = getY(c.high)
+            const lowY = getY(c.low)
+            const isUp = c.close >= c.open
+            const bodyTop = Math.min(openY, closeY)
+            const bodyHeight = Math.max(1, Math.abs(closeY - openY))
+            return (
+              <g key={i}>
+                <line x1={x} y1={highY} x2={x} y2={lowY} stroke={isUp ? 'var(--color-hud-green)' : 'var(--color-hud-red)'} strokeWidth={1} opacity={0.7} />
+                <rect x={x - cw / 2} y={bodyTop} width={cw} height={bodyHeight} fill={isUp ? 'var(--color-hud-green)' : 'var(--color-hud-red)'} opacity={viewMode === 'both' ? 0.35 : 0.6} stroke="none" />
+              </g>
+            )
+          })}
+        </g>
+      )}
+
       {hoverIndex !== null && hoverValue !== null && hoverMarker === null && (() => {
-        const hoverX = getX(hoverIndex)
         const hoverY = getY(hoverValue)
         const tooltipWidth = 85
         const tooltipHeight = 38
@@ -402,6 +487,27 @@ export function LineChart({
       })()}
     </svg>
   )
+
+  if (showChartTypeToggle) {
+    return (
+      <div className="relative h-full w-full">
+        {chartContent}
+        <div className="absolute top-2 right-2 flex gap-1 z-10" style={{ pointerEvents: 'auto' }}>
+          {(['line', 'candle', 'both'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              className={`hud-label transition-colors px-1.5 py-0.5 rounded ${viewMode === mode ? 'text-hud-primary bg-hud-bg/80' : 'text-hud-text-dim hover:text-hud-text'}`}
+            >
+              {mode === 'line' ? 'Line' : mode === 'candle' ? 'Candle' : 'Both'}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  return chartContent
 }
 
 // Mini sparkline chart for inline use

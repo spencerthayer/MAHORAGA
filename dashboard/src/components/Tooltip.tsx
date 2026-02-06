@@ -144,8 +144,8 @@ export function TooltipPortal({ isVisible, coords, position, content, className 
           className={`
             bg-hud-bg-panel border border-hud-line
             px-3 py-2 text-xs text-hud-text
-            max-w-xs pointer-events-none
-            ${className}
+            pointer-events-none
+            ${className || 'max-w-xs'}
           `}
         >
           {content}

@@ -7,12 +7,51 @@ export interface Account {
 }
 
 export interface Position {
+  asset_id: string
   symbol: string
+  exchange: string
+  asset_class: string
+  avg_entry_price: number
   qty: number
   side: string
   market_value: number
+  cost_basis: number
   unrealized_pl: number
+  unrealized_plpc: number
+  unrealized_intraday_pl: number
+  unrealized_intraday_plpc: number
   current_price: number
+  lastday_price: number
+  change_today: number
+}
+
+export interface SymbolDetail {
+  // From Alpaca snapshot
+  bid_price: number
+  bid_size: number
+  ask_price: number
+  ask_size: number
+  volume: number
+  open: number
+  day_high: number
+  day_low: number
+  // From Finnhub metrics (equities) or FMP (crypto)
+  market_cap: number | null
+  year_high: number | null
+  year_low: number | null
+  avg_volume: number | null
+  previous_close: number | null
+  // From Finnhub metrics (equities only)
+  pe_ratio: number | null
+  dividend_yield: number | null
+  beta: number | null
+  // From Alpaca asset (equities only)
+  shortable: boolean | null
+  marginable: boolean | null
+  fractionable: boolean | null
+  // Unavailable fields
+  overnight_volume: null
+  borrow_rate: null
 }
 
 export interface Clock {

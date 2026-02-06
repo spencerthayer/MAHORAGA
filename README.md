@@ -86,6 +86,10 @@ npx wrangler secret put ALPACA_PAPER         # "true" for paper trading (recomme
 npx wrangler secret put TWITTER_BEARER_TOKEN
 npx wrangler secret put DISCORD_WEBHOOK_URL
 npx wrangler secret put KILL_SWITCH_SECRET   # Emergency kill switch (separate from API token)
+
+# Optional: Market data providers for position tooltips
+npx wrangler secret put FINNHUB_API_KEY      # Equity fundamentals (free: https://finnhub.io/register)
+npx wrangler secret put FMP_API_KEY          # Crypto market data (free: https://financialmodelingprep.com/register)
 ```
 
 ### 4. Deploy
@@ -376,6 +380,7 @@ All embeds include a footer: *"MAHORAGA • Not financial advice • DYOR"*
 | `/agent/logs` | Get recent logs |
 | `/agent/trigger` | Manually trigger (for testing) |
 | `/agent/kill` | Emergency kill switch (uses `KILL_SWITCH_SECRET`) |
+| `/agent/symbol-detail/:symbol` | On-demand market data for a symbol (tooltip data) |
 | `/mcp` | MCP server for tool access |
 
 ## Security
@@ -432,7 +437,7 @@ mahoraga/
 │   │   └── session.ts
 │   ├── mcp/                    # MCP server & tools
 │   ├── policy/                 # Trade validation
-│   └── providers/              # Alpaca, LLM, news clients
+│   └── providers/              # Alpaca, LLM, Finnhub, FMP, news clients
 ├── scripts/
 │   ├── test-alpaca.ts          # Alpaca API connection test
 │   ├── list-models.sh          # Fetch OpenRouter models + pricing
@@ -514,6 +519,63 @@ For an account that started at \$100,000 with current equity of \$106,035:
 
 - **Cash** — uninvested dollars in the account (starting cash minus cost of purchases plus proceeds from sales)
 - **Buying Power** — total amount available to open new positions, factoring in RegT margin. For a margin-eligible account this is typically ~2× settled cash, reduced by the margin requirements of existing positions
+
+## Positions Panel
+
+The positions table shows all open positions with the following columns:
+
+| Column | Description |
+|--------|-------------|
+| **Symbol** | Ticker symbol (crypto symbols show ₿ prefix). Hover for detailed tooltip. |
+| **Shares** | Number of shares/units held |
+| **Value** | Current market value of the position |
+| **Today P&L** | Intraday unrealized profit/loss (uses `unrealized_intraday_pl`) |
+| **Total P&L** | All-time unrealized profit/loss since entry (uses `unrealized_pl`) |
+| **Diversity** | Position weight as a percentage of total portfolio value |
+| **Trend** | Sparkline showing recent price movement |
+
+### Symbol Tooltip
+
+Hovering over a symbol in the positions table loads detailed market data on-demand from the `/agent/symbol-detail/:symbol` endpoint. Data is organized in sections:
+
+| Section | Fields | Source |
+|---------|--------|--------|
+| **Quote** | Bid (price × size), Ask (price × size), Bid-Ask Spread | Alpaca snapshot |
+| **Trading** | Volume, Overnight Volume (--), Average Volume | Alpaca snapshot + Finnhub |
+| **Price** | Open, Today's High, Today's Low | Alpaca snapshot |
+| **Fundamentals** | Market Cap, 52 Week High/Low, P/E Ratio, Dividend Yield | Finnhub (equities) or FMP (crypto) |
+| **Short Info** | Short Inventory (Available/Unavailable), Borrow Rate (--) | Alpaca asset (equities only) |
+| **Position** | Entry Price, Current Price, Hold Time, Entry Sentiment, Staleness | Existing position data |
+
+### Data Providers
+
+**Finnhub** provides equity fundamentals (market cap, P/E ratio, dividend yield, 52-week high/low, average volume) for all US stocks with no symbol restrictions.
+
+- Free tier: 60 calls/minute, no daily cap
+- Endpoint: `/api/v1/stock/metric?symbol=X&metric=all`
+- Data is cached in KV for 15 minutes
+
+**FMP (Financial Modeling Prep)** provides crypto market data for major pairs (BTCUSD, ETHUSD, SOLUSD, etc.).
+
+- Free tier: 250 calls/day
+- Endpoint: `/stable/quote?symbol=BTCUSD`
+- Data is cached in KV for 5 minutes
+
+**Both providers are optional.** If API keys are not configured, the respective fields show "--" in the tooltip. Alpaca data (bid/ask, volume, OHLC, shortable status) is always available.
+
+### Setting up Finnhub
+
+1. Create a free account at [https://finnhub.io/register](https://finnhub.io/register)
+2. Copy your API key from the Finnhub dashboard
+3. For local development: add `FINNHUB_API_KEY=your_key` to `.dev.vars`
+4. For production: `npx wrangler secret put FINNHUB_API_KEY`
+
+### Setting up FMP
+
+1. Create a free account at [https://site.financialmodelingprep.com/register](https://site.financialmodelingprep.com/register)
+2. Copy your API key from the FMP dashboard
+3. For local development: add `FMP_API_KEY=your_key` to `.dev.vars`
+4. For production: `npx wrangler secret put FMP_API_KEY`
 
 ## Dashboard Theming
 

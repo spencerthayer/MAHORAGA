@@ -10,7 +10,8 @@ import { LineChart, Sparkline } from './components/LineChart'
 import { NotificationBell } from './components/NotificationBell'
 import { Tooltip, TooltipContent } from './components/Tooltip'
 import { CrtEffect } from './components/CrtEffect'
-import type { Status, Config, LogEntry, Signal, Position, SignalResearch, PortfolioSnapshot } from './types'
+import type { Status, Config, LogEntry, Signal, Position, SignalResearch, PortfolioSnapshot, SymbolDetail } from './types'
+import type { PositionEntry, StalenessAnalysis } from './types'
 
 const API_BASE = '/api'
 
@@ -109,6 +110,223 @@ function generateMockPriceHistory(currentPrice: number, unrealizedPl: number, po
   }
   prices[prices.length - 1] = currentPrice
   return prices
+}
+
+// ---------------------------------------------------------------------------
+// Symbol Detail Tooltip — lazy-loads data on hover from /api/symbol-detail/:symbol
+// ---------------------------------------------------------------------------
+
+function formatLargeNumber(value: number | null): string {
+  if (value === null || value === undefined) return '--'
+  if (Math.abs(value) >= 1e12) return `$${(value / 1e12).toFixed(2)}T`
+  if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(2)}B`
+  if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(2)}M`
+  return `$${value.toLocaleString()}`
+}
+
+function formatVolume(value: number | null): string {
+  if (value === null || value === undefined) return '--'
+  if (value >= 1e6) return `${(value / 1e6).toFixed(2)}M`
+  if (value >= 1e3) return `${(value / 1e3).toFixed(1)}K`
+  return value.toLocaleString()
+}
+
+const symbolDetailCache: Record<string, { data: SymbolDetail; ts: number }> = {}
+const SYMBOL_DETAIL_CACHE_TTL = 60_000 // 1 minute client-side cache
+
+function SymbolDetailTooltip({
+  symbol,
+  posEntry,
+  staleness,
+  holdTime,
+  currentPrice,
+  isCrypto,
+  children,
+}: {
+  symbol: string
+  posEntry?: PositionEntry
+  staleness?: StalenessAnalysis
+  holdTime: number | null
+  currentPrice: number
+  isCrypto: boolean
+  children: React.ReactNode
+}) {
+  const [detail, setDetail] = useState<SymbolDetail | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
+
+  const handleMouseEnter = () => {
+    if (fetched) return
+    const cached = symbolDetailCache[symbol]
+    if (cached && Date.now() - cached.ts < SYMBOL_DETAIL_CACHE_TTL) {
+      setDetail(cached.data)
+      setFetched(true)
+      return
+    }
+    setLoading(true)
+    authFetch(`${API_BASE}/symbol-detail/${encodeURIComponent(symbol)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok && data.data) {
+          symbolDetailCache[symbol] = { data: data.data, ts: Date.now() }
+          setDetail(data.data)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setLoading(false)
+        setFetched(true)
+      })
+  }
+
+  const tooltipContent = (
+    <div className="space-y-2 min-w-[260px]">
+      {/* Header */}
+      <div className="hud-label text-hud-primary border-b border-hud-line/50 pb-1">
+        {symbol} {isCrypto && <span className="text-hud-warning">₿</span>}
+      </div>
+
+      {loading && !detail && (
+        <div className="text-hud-text-dim text-xs animate-pulse">Loading market data...</div>
+      )}
+
+      {detail && (
+        <>
+          {/* Quote Section */}
+          <div className="space-y-0.5">
+            <div className="hud-label text-[10px] text-hud-text-dim uppercase tracking-wider">Quote</div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Bid</span>
+              <span className="text-hud-text-bright">{formatCurrency(detail.bid_price)} x {detail.bid_size}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Ask</span>
+              <span className="text-hud-text-bright">{formatCurrency(detail.ask_price)} x {detail.ask_size}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Spread</span>
+              <span className="text-hud-text-bright">{formatCurrency(detail.ask_price - detail.bid_price)}</span>
+            </div>
+          </div>
+
+          {/* Trading Section */}
+          <div className="space-y-0.5 border-t border-hud-line/30 pt-1">
+            <div className="hud-label text-[10px] text-hud-text-dim uppercase tracking-wider">Trading</div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Volume</span>
+              <span className="text-hud-text-bright">{formatVolume(detail.volume)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Overnight Vol</span>
+              <span className="text-hud-text-dim">--</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Avg Volume</span>
+              <span className="text-hud-text-bright">{formatVolume(detail.avg_volume)}</span>
+            </div>
+          </div>
+
+          {/* Price Section */}
+          <div className="space-y-0.5 border-t border-hud-line/30 pt-1">
+            <div className="hud-label text-[10px] text-hud-text-dim uppercase tracking-wider">Price</div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Open</span>
+              <span className="text-hud-text-bright">{formatCurrency(detail.open)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Today&apos;s High</span>
+              <span className="text-hud-text-bright">{formatCurrency(detail.day_high)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Today&apos;s Low</span>
+              <span className="text-hud-text-bright">{formatCurrency(detail.day_low)}</span>
+            </div>
+          </div>
+
+          {/* Fundamentals Section */}
+          <div className="space-y-0.5 border-t border-hud-line/30 pt-1">
+            <div className="hud-label text-[10px] text-hud-text-dim uppercase tracking-wider">Fundamentals</div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Market Cap</span>
+              <span className="text-hud-text-bright">{formatLargeNumber(detail.market_cap)}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">52 Week High</span>
+              <span className="text-hud-text-bright">{detail.year_high !== null ? formatCurrency(detail.year_high) : '--'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">52 Week Low</span>
+              <span className="text-hud-text-bright">{detail.year_low !== null ? formatCurrency(detail.year_low) : '--'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">P/E Ratio</span>
+              <span className="text-hud-text-bright">{detail.pe_ratio !== null ? detail.pe_ratio.toFixed(2) : '--'}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-hud-text-dim">Dividend Yield</span>
+              <span className="text-hud-text-bright">{detail.dividend_yield !== null ? `${detail.dividend_yield.toFixed(2)}%` : '--'}</span>
+            </div>
+          </div>
+
+          {/* Short Section */}
+          {!isCrypto && (
+            <div className="space-y-0.5 border-t border-hud-line/30 pt-1">
+              <div className="hud-label text-[10px] text-hud-text-dim uppercase tracking-wider">Short Info</div>
+              <div className="flex justify-between gap-4">
+                <span className="text-hud-text-dim">Short Inventory</span>
+                <span className="text-hud-text-bright">{detail.shortable ? 'Available' : 'Unavailable'}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-hud-text-dim">Borrow Rate</span>
+                <span className="text-hud-text-dim">--</span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Position Section (always available from existing data) */}
+      <div className="space-y-0.5 border-t border-hud-line/30 pt-1">
+        <div className="hud-label text-[10px] text-hud-text-dim uppercase tracking-wider">Position</div>
+        <div className="flex justify-between gap-4">
+          <span className="text-hud-text-dim">Entry Price</span>
+          <span className="text-hud-text-bright">{posEntry ? formatCurrency(posEntry.entry_price) : 'N/A'}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-hud-text-dim">Current Price</span>
+          <span className="text-hud-text-bright">{formatCurrency(currentPrice)}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-hud-text-dim">Hold Time</span>
+          <span className="text-hud-text-bright">{holdTime !== null ? `${holdTime}h` : 'N/A'}</span>
+        </div>
+        <div className="flex justify-between gap-4">
+          <span className="text-hud-text-dim">Entry Sentiment</span>
+          <span className="text-hud-text-bright">{posEntry ? `${(posEntry.entry_sentiment * 100).toFixed(0)}%` : 'N/A'}</span>
+        </div>
+        {staleness && (
+          <div className="flex justify-between gap-4">
+            <span className="text-hud-text-dim">Staleness</span>
+            <span className={staleness.shouldExit ? 'text-hud-error' : 'text-hud-text'}>{Number.isFinite(staleness.score) ? `${(staleness.score * 100).toFixed(0)}%` : 'N/A'}</span>
+          </div>
+        )}
+      </div>
+
+      {posEntry?.entry_reason && (
+        <p className="text-hud-text-dim text-hud-sm leading-tight border-t border-hud-line/30 pt-1">
+          {posEntry.entry_reason}
+        </p>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="inline-block" onMouseEnter={handleMouseEnter}>
+      <Tooltip position="right" content={tooltipContent} className="max-w-sm">
+        {children}
+      </Tooltip>
+    </div>
+  )
 }
 
 export default function App() {
@@ -441,73 +659,78 @@ export default function App() {
                     <thead>
                       <tr className="border-b border-hud-line/50">
                         <th className="hud-label text-left py-2 px-2">Symbol</th>
-                        <th className="hud-label text-right py-2 px-2 hidden sm:table-cell">Qty</th>
+                        <th className="hud-label text-right py-2 px-2 hidden sm:table-cell">Shares</th>
                         <th className="hud-label text-right py-2 px-2 hidden md:table-cell">Value</th>
-                        <th className="hud-label text-right py-2 px-2">P&L</th>
+                        <th className="hud-label text-right py-2 px-2">Today P&L</th>
+                        <th className="hud-label text-right py-2 px-2 hidden sm:table-cell">Total P&L</th>
+                        <th className="hud-label text-right py-2 px-2 hidden lg:table-cell">Diversity</th>
                         <th className="hud-label text-center py-2 px-2">Trend</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {positions.map((pos: Position) => {
-                        const plPct = (pos.unrealized_pl / (pos.market_value - pos.unrealized_pl)) * 100
-                        const priceHistory = positionPriceHistories[pos.symbol] || []
-                        const posEntry = status?.positionEntries?.[pos.symbol]
-                        const staleness = status?.stalenessAnalysis?.[pos.symbol]
-                        const holdTime = posEntry ? Math.floor((Date.now() - posEntry.entry_time) / 3600000) : null
-                        
-                        return (
-                          <motion.tr 
-                            key={pos.symbol}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="border-b border-hud-line/20 hover:bg-hud-line/10"
-                          >
-                            <td className="hud-value-sm py-2 px-2">
-                              <Tooltip
-                                position="right"
-                                content={
-                                  <TooltipContent
-                                    title={pos.symbol}
-                                    items={[
-                                      { label: 'Entry Price', value: posEntry ? formatCurrency(posEntry.entry_price) : 'N/A' },
-                                      { label: 'Current Price', value: formatCurrency(pos.current_price) },
-                                      { label: 'Hold Time', value: holdTime !== null ? `${holdTime}h` : 'N/A' },
-                                      { label: 'Entry Sentiment', value: posEntry ? `${(posEntry.entry_sentiment * 100).toFixed(0)}%` : 'N/A' },
-                                      ...(staleness ? [{ 
-                                        label: 'Staleness', 
-                                        value: `${(staleness.score * 100).toFixed(0)}%`,
-                                        color: staleness.shouldExit ? 'text-hud-error' : 'text-hud-text'
-                                      }] : []),
-                                    ]}
-                                    description={posEntry?.entry_reason}
-                                  />
-                                }
-                              >
-                                <span className="cursor-help border-b border-dotted border-hud-text-dim">
-                                  {isCryptoSymbol(pos.symbol, config?.crypto_symbols) && (
-                                    <span className="text-hud-warning mr-1">₿</span>
-                                  )}
-                                  {pos.symbol}
-                                </span>
-                              </Tooltip>
-                            </td>
-                            <td className="hud-value-sm text-right py-2 px-2 hidden sm:table-cell">{pos.qty}</td>
-                            <td className="hud-value-sm text-right py-2 px-2 hidden md:table-cell">{formatCurrency(pos.market_value)}</td>
-                            <td className={clsx(
-                              'hud-value-sm text-right py-2 px-2',
-                              pos.unrealized_pl >= 0 ? 'text-hud-success' : 'text-hud-error'
-                            )}>
-                              <div>{formatCurrency(pos.unrealized_pl)}</div>
-                              <div className="text-xs opacity-70">{formatPercent(plPct)}</div>
-                            </td>
-                            <td className="py-2 px-2">
-                              <div className="flex justify-center">
-                                <Sparkline data={priceHistory} width={60} height={20} />
-                              </div>
-                            </td>
-                          </motion.tr>
-                        )
-                      })}
+                      {(() => {
+                        const totalMarketValue = positions.reduce((sum: number, p: Position) => sum + p.market_value, 0)
+                        return positions.map((pos: Position) => {
+                          const totalPlPct = pos.cost_basis ? ((pos.unrealized_pl / pos.cost_basis) * 100) : ((pos.unrealized_pl / (pos.market_value - pos.unrealized_pl)) * 100)
+                          const todayPlPct = pos.unrealized_intraday_plpc ? pos.unrealized_intraday_plpc * 100 : 0
+                          const diversity = totalMarketValue > 0 ? (pos.market_value / totalMarketValue * 100) : 0
+                          const priceHistory = positionPriceHistories[pos.symbol] || []
+                          const posEntry = status?.positionEntries?.[pos.symbol]
+                          const staleness = status?.stalenessAnalysis?.[pos.symbol]
+                          const holdTime = posEntry ? Math.floor((Date.now() - posEntry.entry_time) / 3600000) : null
+                          
+                          return (
+                            <motion.tr 
+                              key={pos.symbol}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="border-b border-hud-line/20 hover:bg-hud-line/10"
+                            >
+                              <td className="hud-value-sm py-2 px-2">
+                                <SymbolDetailTooltip
+                                  symbol={pos.symbol}
+                                  posEntry={posEntry}
+                                  staleness={staleness}
+                                  holdTime={holdTime}
+                                  currentPrice={pos.current_price}
+                                  isCrypto={isCryptoSymbol(pos.symbol, config?.crypto_symbols)}
+                                >
+                                  <span className="cursor-help border-b border-dotted border-hud-text-dim">
+                                    {isCryptoSymbol(pos.symbol, config?.crypto_symbols) && (
+                                      <span className="text-hud-warning mr-1">₿</span>
+                                    )}
+                                    {pos.symbol}
+                                  </span>
+                                </SymbolDetailTooltip>
+                              </td>
+                              <td className="hud-value-sm text-right py-2 px-2 hidden sm:table-cell">{pos.qty}</td>
+                              <td className="hud-value-sm text-right py-2 px-2 hidden md:table-cell">{formatCurrency(pos.market_value)}</td>
+                              <td className={clsx(
+                                'hud-value-sm text-right py-2 px-2',
+                                (pos.unrealized_intraday_pl || 0) >= 0 ? 'text-hud-success' : 'text-hud-error'
+                              )}>
+                                <div>{formatCurrency(pos.unrealized_intraday_pl || 0)}</div>
+                                <div className="text-xs opacity-70">{formatPercent(todayPlPct)}</div>
+                              </td>
+                              <td className={clsx(
+                                'hud-value-sm text-right py-2 px-2 hidden sm:table-cell',
+                                pos.unrealized_pl >= 0 ? 'text-hud-success' : 'text-hud-error'
+                              )}>
+                                <div>{formatCurrency(pos.unrealized_pl)}</div>
+                                <div className="text-xs opacity-70">{formatPercent(totalPlPct)}</div>
+                              </td>
+                              <td className="hud-value-sm text-right py-2 px-2 hidden lg:table-cell text-hud-text-dim">
+                                {diversity.toFixed(1)}%
+                              </td>
+                              <td className="py-2 px-2">
+                                <div className="flex justify-center">
+                                  <Sparkline data={priceHistory} width={60} height={20} />
+                                </div>
+                              </td>
+                            </motion.tr>
+                          )
+                        })
+                      })()}
                     </tbody>
                   </table>
                 </div>

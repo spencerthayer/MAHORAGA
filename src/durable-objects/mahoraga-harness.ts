@@ -39,6 +39,8 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.d";
 import { createAlpacaProviders } from "../providers/alpaca";
 import { createLLMProvider } from "../providers/llm/factory";
+import { createFinnhubProvider } from "../providers/finnhub";
+import { createFMPProvider } from "../providers/fmp";
 import type { Account, LLMProvider, MarketClock, Position } from "../providers/types";
 
 // ============================================================================
@@ -1041,7 +1043,7 @@ export class MahoragaHarness extends DurableObject<Env> {
       "history",
       "setup/status",
     ];
-    if (protectedActions.includes(action)) {
+    if (protectedActions.includes(action) || action.startsWith("symbol-detail/")) {
       if (!this.isAuthorized(request)) {
         return this.unauthorizedResponse();
       }
@@ -1098,6 +1100,17 @@ export class MahoragaHarness extends DurableObject<Env> {
           return this.handleKillSwitch();
 
         default:
+          // Handle parameterized routes
+          if (action.startsWith("symbol-detail/")) {
+            const symbol = decodeURIComponent(action.slice("symbol-detail/".length));
+            if (!symbol) {
+              return new Response(JSON.stringify({ error: "Symbol required" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
+            return this.handleSymbolDetail(symbol);
+          }
           return new Response("Not found", { status: 404 });
       }
     } catch (error) {
@@ -1168,6 +1181,176 @@ export class MahoragaHarness extends DurableObject<Env> {
         stalenessAnalysis: this.state.stalenessAnalysis,
       },
     });
+  }
+
+  private async handleSymbolDetail(symbol: string): Promise<Response> {
+    const alpaca = createAlpacaProviders(this.env);
+    const cryptoSymbols = this.state.config.crypto_symbols || [];
+    const isCrypto = isCryptoSymbol(symbol, cryptoSymbols);
+
+    console.log(`[MahoragaHarness] symbol-detail request: ${symbol} (type: ${isCrypto ? "crypto" : "equity"})`);
+
+    // Build the result object with defaults
+    const result: Record<string, unknown> = {
+      bid_price: 0,
+      bid_size: 0,
+      ask_price: 0,
+      ask_size: 0,
+      volume: 0,
+      open: 0,
+      day_high: 0,
+      day_low: 0,
+      market_cap: null,
+      year_high: null,
+      year_low: null,
+      avg_volume: null,
+      previous_close: null,
+      pe_ratio: null,
+      dividend_yield: null,
+      beta: null,
+      shortable: null,
+      marginable: null,
+      fractionable: null,
+      overnight_volume: null,
+      borrow_rate: null,
+    };
+
+    try {
+      if (isCrypto) {
+        // Crypto path: Alpaca crypto snapshot + FMP crypto quote
+        const normalizedSymbol = normalizeCryptoSymbol(symbol);
+        const fmpSymbol = symbol.replace("/", ""); // BTC/USD -> BTCUSD
+
+        const fetchPromises: Promise<unknown>[] = [
+          alpaca.marketData.getCryptoSnapshot(normalizedSymbol).catch((e: unknown) => {
+            console.log(`[MahoragaHarness] Alpaca crypto snapshot error for ${symbol}: ${e}`);
+            return null;
+          }),
+        ];
+
+        // Add FMP if configured
+        if (this.env.FMP_API_KEY) {
+          const fmp = createFMPProvider(this.env.FMP_API_KEY, this.env.CACHE);
+          fetchPromises.push(
+            fmp.getCryptoQuote(fmpSymbol).catch((e: unknown) => {
+              console.log(`[MahoragaHarness] FMP crypto quote error for ${symbol}: ${e}`);
+              return null;
+            })
+          );
+        } else {
+          fetchPromises.push(Promise.resolve(null));
+        }
+
+        const [snapshot, fmpQuote] = await Promise.all(fetchPromises) as [
+          Awaited<ReturnType<typeof alpaca.marketData.getCryptoSnapshot>> | null,
+          Awaited<ReturnType<ReturnType<typeof createFMPProvider>["getCryptoQuote"]>> | null,
+        ];
+
+        // Alpaca crypto snapshot
+        if (snapshot) {
+          result.bid_price = snapshot.latest_quote?.bid_price || 0;
+          result.bid_size = snapshot.latest_quote?.bid_size || 0;
+          result.ask_price = snapshot.latest_quote?.ask_price || 0;
+          result.ask_size = snapshot.latest_quote?.ask_size || 0;
+          result.volume = snapshot.daily_bar?.v || 0;
+          result.open = snapshot.daily_bar?.o || 0;
+          result.day_high = snapshot.daily_bar?.h || 0;
+          result.day_low = snapshot.daily_bar?.l || 0;
+          result.previous_close = snapshot.prev_daily_bar?.c || null;
+          console.log(
+            `[MahoragaHarness] Alpaca snapshot for ${symbol}: bid=${result.bid_price}x${result.bid_size}, ask=${result.ask_price}x${result.ask_size}, vol=${result.volume}, O=${result.open}, H=${result.day_high}, L=${result.day_low}`
+          );
+        }
+
+        // FMP crypto supplementary data
+        if (fmpQuote) {
+          result.market_cap = fmpQuote.marketCap || null;
+          result.year_high = fmpQuote.yearHigh || null;
+          result.year_low = fmpQuote.yearLow || null;
+          result.avg_volume = fmpQuote.volume || null; // FMP volume as proxy
+        }
+      } else {
+        // Equity path: Alpaca snapshot + Alpaca asset + Finnhub metrics
+        const fetchPromises: Promise<unknown>[] = [
+          alpaca.marketData.getSnapshot(symbol).catch((e: unknown) => {
+            console.log(`[MahoragaHarness] Alpaca snapshot error for ${symbol}: ${e}`);
+            return null;
+          }),
+          alpaca.trading.getAsset(symbol).catch((e: unknown) => {
+            console.log(`[MahoragaHarness] Alpaca asset error for ${symbol}: ${e}`);
+            return null;
+          }),
+        ];
+
+        // Add Finnhub if configured
+        if (this.env.FINNHUB_API_KEY) {
+          const finnhub = createFinnhubProvider(this.env.FINNHUB_API_KEY, this.env.CACHE);
+          fetchPromises.push(
+            finnhub.getMetrics(symbol).catch((e: unknown) => {
+              console.log(`[MahoragaHarness] Finnhub metrics error for ${symbol}: ${e}`);
+              return null;
+            })
+          );
+        } else {
+          fetchPromises.push(Promise.resolve(null));
+        }
+
+        const [snapshot, asset, finnhubMetrics] = await Promise.all(fetchPromises) as [
+          Awaited<ReturnType<typeof alpaca.marketData.getSnapshot>> | null,
+          Awaited<ReturnType<typeof alpaca.trading.getAsset>> | null,
+          Awaited<ReturnType<ReturnType<typeof createFinnhubProvider>["getMetrics"]>> | null,
+        ];
+
+        // Alpaca snapshot
+        if (snapshot) {
+          result.bid_price = snapshot.latest_quote?.bid_price || 0;
+          result.bid_size = snapshot.latest_quote?.bid_size || 0;
+          result.ask_price = snapshot.latest_quote?.ask_price || 0;
+          result.ask_size = snapshot.latest_quote?.ask_size || 0;
+          result.volume = snapshot.daily_bar?.v || 0;
+          result.open = snapshot.daily_bar?.o || 0;
+          result.day_high = snapshot.daily_bar?.h || 0;
+          result.day_low = snapshot.daily_bar?.l || 0;
+          result.previous_close = snapshot.prev_daily_bar?.c || null;
+          console.log(
+            `[MahoragaHarness] Alpaca snapshot for ${symbol}: bid=${result.bid_price}x${result.bid_size}, ask=${result.ask_price}x${result.ask_size}, vol=${result.volume}, O=${result.open}, H=${result.day_high}, L=${result.day_low}`
+          );
+        }
+
+        // Alpaca asset
+        if (asset) {
+          result.shortable = asset.shortable;
+          result.marginable = asset.marginable;
+          result.fractionable = asset.fractionable;
+          console.log(
+            `[MahoragaHarness] Alpaca asset for ${symbol}: shortable=${asset.shortable}, marginable=${asset.marginable}, fractionable=${asset.fractionable}`
+          );
+        }
+
+        // Finnhub metrics
+        if (finnhubMetrics) {
+          // marketCapitalization is in millions from Finnhub, convert to raw value
+          result.market_cap = finnhubMetrics.marketCapitalization
+            ? finnhubMetrics.marketCapitalization * 1_000_000
+            : null;
+          result.pe_ratio = finnhubMetrics.peBasicExclExtraTTM ?? null;
+          result.dividend_yield = finnhubMetrics.dividendYieldIndicatedAnnual ?? null;
+          result.year_high = finnhubMetrics["52WeekHigh"] ?? null;
+          result.year_low = finnhubMetrics["52WeekLow"] ?? null;
+          result.beta = finnhubMetrics.beta ?? null;
+          // 10DayAverageTradingVolume is in millions of shares from Finnhub
+          result.avg_volume = finnhubMetrics["10DayAverageTradingVolume"]
+            ? finnhubMetrics["10DayAverageTradingVolume"] * 1_000_000
+            : null;
+        }
+      }
+    } catch (error) {
+      console.log(`[MahoragaHarness] symbol-detail error for ${symbol}: ${error}`);
+    }
+
+    console.log(`[MahoragaHarness] symbol-detail response for ${symbol}: ${JSON.stringify(result)}`);
+
+    return this.jsonResponse({ ok: true, data: result });
   }
 
   private async handleUpdateConfig(request: Request): Promise<Response> {

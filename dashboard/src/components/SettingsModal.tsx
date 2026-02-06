@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import type { Config } from '../types'
+import type { Config, CryptoAsset } from '../types'
 import { Panel } from './Panel'
 import { ModelPicker } from './ModelPicker'
 import { useOpenRouterModels } from '../hooks/useOpenRouterModels'
@@ -8,9 +8,10 @@ interface SettingsModalProps {
   config: Config
   onSave: (config: Config) => void
   onClose: () => void
+  cryptoAssets?: CryptoAsset[]
 }
 
-export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
+export function SettingsModal({ config, onSave, onClose, cryptoAssets = [] }: SettingsModalProps) {
   const [localConfig, setLocalConfig] = useState<Config>(config)
   const [saving, setSaving] = useState(false)
   const [apiToken, setApiToken] = useState(localStorage.getItem('mahoraga_api_token') || '')
@@ -515,16 +516,57 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                 </label>
                 <p className="text-hud-xs text-hud-text-dim mt-1">Trade crypto 24/7 based on momentum. Alpaca supports 20+ coins.</p>
               </div>
-              <div>
-                <label className="hud-label block mb-1">Symbols (comma-separated)</label>
-                <input
-                  type="text"
-                  className="hud-input w-full"
-                  value={(localConfig.crypto_symbols || ['BTC/USD', 'ETH/USD', 'SOL/USD']).join(', ')}
-                  onChange={e => handleChange('crypto_symbols', e.target.value.split(',').map(s => s.trim()))}
-                  disabled={!localConfig.crypto_enabled}
-                  placeholder="BTC/USD, ETH/USD, SOL/USD, DOGE/USD, AVAX/USD..."
-                />
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="hud-label">Crypto Symbols ({(localConfig.crypto_symbols || []).length} selected)</label>
+                  {cryptoAssets.length > 0 && (
+                    <button
+                      type="button"
+                      className="text-xs text-hud-cyan hover:text-hud-text cursor-pointer disabled:opacity-40"
+                      disabled={!localConfig.crypto_enabled}
+                      onClick={() => {
+                        const allSelected = cryptoAssets.every(a => (localConfig.crypto_symbols || []).includes(a.symbol))
+                        handleChange('crypto_symbols', allSelected ? [] : cryptoAssets.map(a => a.symbol))
+                      }}
+                    >
+                      {cryptoAssets.every(a => (localConfig.crypto_symbols || []).includes(a.symbol)) ? 'Deselect All' : 'Select All'}
+                    </button>
+                  )}
+                </div>
+                {cryptoAssets.length > 0 ? (
+                  <div className="max-h-48 overflow-y-auto border border-hud-line/20 rounded p-2">
+                    <div className="grid grid-cols-3 gap-1">
+                      {cryptoAssets.map(asset => (
+                        <label key={asset.symbol} className="flex items-center gap-1.5 text-xs cursor-pointer py-0.5">
+                          <input
+                            type="checkbox"
+                            className="hud-input w-3.5 h-3.5 shrink-0"
+                            checked={(localConfig.crypto_symbols || []).includes(asset.symbol)}
+                            disabled={!localConfig.crypto_enabled}
+                            onChange={() => {
+                              const current = localConfig.crypto_symbols || []
+                              const updated = current.includes(asset.symbol)
+                                ? current.filter(s => s !== asset.symbol)
+                                : [...current, asset.symbol]
+                              handleChange('crypto_symbols', updated)
+                            }}
+                          />
+                          <span className="hud-value-sm">{asset.symbol}</span>
+                          <span className="hud-label text-hud-text-dim truncate">{asset.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    className="hud-input w-full"
+                    value={(localConfig.crypto_symbols || ['BTC/USD', 'ETH/USD', 'SOL/USD']).join(', ')}
+                    onChange={e => handleChange('crypto_symbols', e.target.value.split(',').map(s => s.trim()))}
+                    disabled={!localConfig.crypto_enabled}
+                    placeholder="BTC/USD, ETH/USD, SOL/USD, DOGE/USD, AVAX/USD..."
+                  />
+                )}
               </div>
               <div>
                 <label className="hud-label block mb-1">Momentum Threshold (%)</label>

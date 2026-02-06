@@ -257,6 +257,15 @@ export class AlpacaTradingProvider implements BrokerProvider {
     }));
   }
 
+  async getAssets(params?: { asset_class?: string; status?: string }): Promise<Asset[]> {
+    const query = new URLSearchParams();
+    if (params?.asset_class) query.set("asset_class", params.asset_class);
+    if (params?.status) query.set("status", params.status);
+    const qs = query.toString();
+    const path = `/v2/assets${qs ? `?${qs}` : ""}`;
+    return this.client.tradingRequest<Asset[]>("GET", path);
+  }
+
   async getAsset(symbol: string): Promise<Asset | null> {
     try {
       const raw = await this.client.tradingRequest<Asset>("GET", `/v2/assets/${encodeURIComponent(symbol)}`);

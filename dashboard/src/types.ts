@@ -153,6 +153,11 @@ export interface Config {
   ticker_blacklist?: string[]
 }
 
+export interface CryptoAsset {
+  symbol: string  // e.g. "BTC/USD"
+  name: string    // e.g. "Bitcoin"
+}
+
 export interface OpenRouterModel {
   id: string
   name: string

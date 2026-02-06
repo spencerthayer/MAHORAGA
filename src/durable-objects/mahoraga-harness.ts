@@ -229,6 +229,10 @@ interface AgentState {
   enabled: boolean;
   /** Track recently ordered symbols with timestamps to prevent duplicate buys while orders are pending */
   recentOrders: Record<string, number>;
+  /** Cached list of tradeable crypto assets from Alpaca */
+  cryptoAssetsCache: Array<{ symbol: string; name: string }> | null;
+  /** Timestamp of last crypto assets cache refresh */
+  cryptoAssetsCacheTime: number;
 }
 
 // ============================================================================
@@ -332,6 +336,8 @@ const DEFAULT_STATE: AgentState = {
   premarketPlan: null,
   enabled: false,
   recentOrders: {},
+  cryptoAssetsCache: null,
+  cryptoAssetsCacheTime: 0,
 };
 
 // Blacklist for ticker extraction - common English words and trading slang
@@ -1042,6 +1048,7 @@ export class MahoragaHarness extends DurableObject<Env> {
       "signals",
       "history",
       "setup/status",
+      "crypto-assets",
     ];
     if (protectedActions.includes(action) || action.startsWith("symbol-detail/")) {
       if (!this.isAuthorized(request)) {
@@ -1082,6 +1089,9 @@ export class MahoragaHarness extends DurableObject<Env> {
 
         case "signals":
           return this.jsonResponse({ signals: this.state.signalCache });
+
+        case "crypto-assets":
+          return this.handleGetCryptoAssets();
 
         case "history":
           return this.handleGetHistory(url);
@@ -1374,6 +1384,36 @@ export class MahoragaHarness extends DurableObject<Env> {
     this.initializeLLM();
     await this.persist();
     return this.jsonResponse({ ok: true, data: this.state.config });
+  }
+
+  private async handleGetCryptoAssets(): Promise<Response> {
+    const CACHE_TTL = 3600_000; // 1 hour
+    if (
+      this.state.cryptoAssetsCache &&
+      Date.now() - this.state.cryptoAssetsCacheTime < CACHE_TTL
+    ) {
+      return this.jsonResponse({ ok: true, data: this.state.cryptoAssetsCache });
+    }
+    try {
+      const alpaca = createAlpacaProviders(this.env);
+      const assets = await alpaca.trading.getAssets({ asset_class: "crypto", status: "active" });
+      const tradeable = assets
+        .filter((a) => a.tradable)
+        .map((a) => ({
+          symbol: a.symbol.includes("/") ? a.symbol : `${a.symbol.replace("USD", "")}/USD`,
+          name: a.name,
+        }))
+        .sort((a, b) => a.symbol.localeCompare(b.symbol));
+      this.state.cryptoAssetsCache = tradeable;
+      this.state.cryptoAssetsCacheTime = Date.now();
+      return this.jsonResponse({ ok: true, data: tradeable });
+    } catch (error) {
+      console.error("[MahoragaHarness] Failed to fetch crypto assets:", error);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Failed to fetch crypto assets" }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
   }
 
   private async handleEnable(): Promise<Response> {

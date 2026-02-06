@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import clsx from 'clsx'
 import { Panel } from './components/Panel'
@@ -10,7 +10,7 @@ import { LineChart, Sparkline } from './components/LineChart'
 import { NotificationBell } from './components/NotificationBell'
 import { Tooltip, TooltipContent } from './components/Tooltip'
 import { CrtEffect } from './components/CrtEffect'
-import type { Status, Config, LogEntry, Signal, Position, SignalResearch, PortfolioSnapshot, SymbolDetail } from './types'
+import type { Status, Config, LogEntry, Signal, Position, SignalResearch, PortfolioSnapshot, SymbolDetail, CryptoAsset } from './types'
 import type { PositionEntry, StalenessAnalysis } from './types'
 
 const API_BASE = '/api'
@@ -339,6 +339,7 @@ export default function App() {
   const [portfolioHistory, setPortfolioHistory] = useState<PortfolioSnapshot[]>([])
   const [portfolioPeriod, setPortfolioPeriod] = useState<'1D' | '1W' | '1M'>('1D')
   const [crtEnabled, setCrtEnabled] = useState(() => localStorage.getItem('mahoraga_crt') === 'true')
+  const [cryptoAssets, setCryptoAssets] = useState<CryptoAsset[]>([])
 
   useEffect(() => {
     const checkSetup = async () => {
@@ -399,6 +400,23 @@ export default function App() {
     return () => clearInterval(historyInterval)
   }, [setupChecked, showSetup, portfolioPeriod])
 
+  // Fetch available Alpaca crypto assets once on load
+  useEffect(() => {
+    if (!setupChecked || showSetup) return
+    const fetchCryptoAssets = async () => {
+      try {
+        const res = await authFetch(`${API_BASE}/crypto-assets`)
+        const data = await res.json()
+        if (data.ok) {
+          setCryptoAssets(data.data)
+        }
+      } catch {
+        // Non-critical: crypto asset list will be empty, settings modal falls back gracefully
+      }
+    }
+    fetchCryptoAssets()
+  }, [setupChecked, showSetup])
+
   const handleSaveConfig = async (config: Config) => {
     const res = await authFetch(`${API_BASE}/config`, {
       method: 'POST',
@@ -417,6 +435,42 @@ export default function App() {
   const logs = status?.logs || []
   const costs = status?.costs || { total_usd: 0, calls: 0, tokens_in: 0, tokens_out: 0, by_model: {} }
   const config = status?.config
+
+  // Debounced config save for inline signal toggles (batches rapid changes)
+  const pendingConfigRef = useRef<Config | null>(null)
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  const debouncedSaveConfig = useCallback((updatedConfig: Config) => {
+    pendingConfigRef.current = updatedConfig
+    if (status) {
+      setStatus({ ...status, config: updatedConfig }) // optimistic UI
+    }
+    clearTimeout(debounceTimerRef.current)
+    debounceTimerRef.current = setTimeout(() => {
+      if (pendingConfigRef.current) {
+        handleSaveConfig(pendingConfigRef.current)
+        pendingConfigRef.current = null
+      }
+    }, 500)
+  }, [status, handleSaveConfig])
+
+  // Toggle a signal's tradability: crypto → crypto_symbols, equity → ticker_blacklist
+  const handleToggleSignal = useCallback((symbol: string, isCrypto: boolean, enabled: boolean) => {
+    if (!config) return
+    if (isCrypto) {
+      const symbols = config.crypto_symbols || ['BTC/USD', 'ETH/USD', 'SOL/USD']
+      const updated = enabled
+        ? [...new Set([...symbols, symbol])]
+        : symbols.filter(s => s !== symbol)
+      debouncedSaveConfig({ ...config, crypto_symbols: updated })
+    } else {
+      const blacklist = config.ticker_blacklist || []
+      const updated = enabled
+        ? blacklist.filter(s => s !== symbol)
+        : [...new Set([...blacklist, symbol])]
+      debouncedSaveConfig({ ...config, ticker_blacklist: updated })
+    }
+  }, [config, debouncedSaveConfig])
   const isMarketOpen = status?.clock?.is_open ?? false
 
   const startingEquity = config?.starting_equity || 100000
@@ -590,9 +644,9 @@ export default function App() {
             </button>
             <div className="flex items-baseline gap-2">
               <span className="text-xl md:text-2xl font-light tracking-tight text-hud-text-bright hud-title-glow">
-                MAHORAGA
+                STONKS
               </span>
-              <span className="hud-label">v2</span>
+              <span className="hud-label">v2.5</span>
             </div>
             <StatusIndicator 
               status={isMarketOpen ? 'active' : 'inactive'} 
@@ -943,10 +997,30 @@ export default function App() {
                         transition={{ delay: i * 0.02 }}
                         className={clsx(
                           "flex items-center justify-between py-1 px-2 border-b border-hud-line/10 hover:bg-hud-line/10 cursor-help",
-                          sig.isCrypto && "bg-hud-warning/5"
+                          sig.isCrypto && "bg-hud-warning/5",
+                          (sig.isCrypto
+                            ? !(config?.crypto_symbols || []).includes(sig.symbol)
+                            : (config?.ticker_blacklist || []).includes(sig.symbol)
+                          ) && "opacity-40"
                         )}
                       >
                         <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            className="hud-input w-3.5 h-3.5 shrink-0 accent-cyan-400 cursor-pointer"
+                            checked={
+                              sig.isCrypto
+                                ? (config?.crypto_symbols || []).includes(sig.symbol)
+                                : !(config?.ticker_blacklist || []).includes(sig.symbol)
+                            }
+                            onChange={(e) => {
+                              e.stopPropagation()
+                              handleToggleSignal(sig.symbol, !!sig.isCrypto, e.target.checked)
+                            }}
+                            title={sig.isCrypto
+                              ? `Toggle ${sig.symbol} crypto trading`
+                              : `Toggle ${sig.symbol} blacklist`}
+                          />
                           {sig.isCrypto && <span className="text-hud-warning text-xs">₿</span>}
                           <span className="hud-value-sm">{sig.symbol}</span>
                           <span className={clsx('hud-label', sig.isCrypto ? 'text-hud-warning' : '')}>{sig.source.toUpperCase()}</span>
@@ -1161,7 +1235,8 @@ export default function App() {
             <SettingsModal 
               config={config} 
               onSave={handleSaveConfig} 
-              onClose={() => setShowSettings(false)} 
+              onClose={() => setShowSettings(false)}
+              cryptoAssets={cryptoAssets}
             />
           </motion.div>
         )}

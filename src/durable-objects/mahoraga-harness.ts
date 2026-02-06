@@ -1276,7 +1276,7 @@ export class MahoragaHarness extends DurableObject<Env> {
   // ============================================================================
 
   private async runDataGatherers(): Promise<void> {
-    this.log("System", "gathering_data", {});
+    this.log("System", "gathering_data", { sources: ["StockTwits", "Reddit", "Crypto", "SEC"] });
 
     await tickerCache.refreshSecTickersIfNeeded();
 
@@ -1953,6 +1953,9 @@ JSON response:
         verdict: result.verdict,
         confidence: result.confidence,
         quality: result.entry_quality,
+        reasoning: result.reasoning.slice(0, 120),
+        catalysts: result.catalysts.length,
+        red_flags: result.red_flags.length,
       });
 
       return result;
@@ -1993,7 +1996,10 @@ JSON response:
     }
 
     if (uncached.length === 0) {
-      this.log("Crypto", "batch_all_cached", { cachedCount: cached.length });
+      this.log("Crypto", "batch_all_cached", {
+        cachedCount: cached.length,
+        symbols: cached.map((c) => c.symbol),
+      });
       return cached;
     }
 
@@ -2113,6 +2119,9 @@ Respond with a JSON object containing a "results" array with one entry per signa
           verdict: result.verdict,
           confidence: result.confidence,
           quality: result.entry_quality,
+          reasoning: result.reasoning.slice(0, 120),
+          catalysts: result.catalysts.length,
+          red_flags: result.red_flags.length,
         });
       }
 
@@ -2121,6 +2130,7 @@ Respond with a JSON object containing a "results" array with one entry per signa
         received: resultsArray.length,
         valid: batchResults.length,
         cached: cached.length,
+        symbols: batchResults.map((r) => `${r.symbol}:${r.verdict}`),
       });
       // #region agent log
       fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchCryptoBatch:done',message:'crypto_batch_done',data:{requested:uncached.length,valid:batchResults.length,verdicts:batchResults.map(r=>({s:r.symbol,v:r.verdict,c:r.confidence}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H4'})}).catch(()=>{});
@@ -2174,11 +2184,17 @@ Respond with a JSON object containing a "results" array with one entry per signa
         time_in_force: "gtc",
       });
 
-      this.log("Crypto", "buy_executed", { symbol, status: order.status, size: positionSize });
+      this.log("Crypto", "buy_executed", {
+        symbol,
+        status: order.status,
+        size: Math.round(positionSize * 100) / 100,
+        confidence,
+        orderId: order.id,
+      });
       this.state.recentOrders[symbol] = Date.now();
       return true;
     } catch (error) {
-      this.log("Crypto", "buy_failed", { symbol, error: String(error) });
+      this.log("Crypto", "buy_failed", { symbol, error: String(error), size: positionSize });
       return false;
     }
   }
@@ -2561,6 +2577,9 @@ JSON response:
         verdict: result.verdict,
         confidence: result.confidence,
         quality: result.entry_quality,
+        reasoning: result.reasoning.slice(0, 120),
+        catalysts: result.catalysts.length,
+        red_flags: result.red_flags.length,
       });
 
       if (result.verdict === "BUY") {
@@ -2617,7 +2636,10 @@ JSON response:
     }
 
     if (uncached.length === 0) {
-      this.log("SignalResearch", "batch_all_cached", { cachedCount: cached.length });
+      this.log("SignalResearch", "batch_all_cached", {
+        cachedCount: cached.length,
+        symbols: cached.map((c) => c.symbol),
+      });
       return cached;
     }
 
@@ -2737,6 +2759,9 @@ Respond with a JSON object containing a "results" array with one entry per signa
           verdict: result.verdict,
           confidence: result.confidence,
           quality: result.entry_quality,
+          reasoning: result.reasoning.slice(0, 120),
+          catalysts: result.catalysts.length,
+          red_flags: result.red_flags.length,
         });
 
         if (result.verdict === "BUY") {
@@ -2759,6 +2784,7 @@ Respond with a JSON object containing a "results" array with one entry per signa
         received: resultsArray.length,
         valid: batchResults.length,
         cached: cached.length,
+        symbols: batchResults.map((r) => `${r.symbol}:${r.verdict}`),
       });
       // #region agent log
       fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:done',message:'batch_done',data:{requested:uncached.length,received:resultsArray.length,valid:batchResults.length,cached:cached.length,verdicts:batchResults.map(r=>({s:r.symbol,v:r.verdict,c:r.confidence}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
@@ -2807,7 +2833,10 @@ Respond with a JSON object containing a "results" array with one entry per signa
       return [];
     }
 
-    this.log("SignalResearch", "researching_signals", { count: candidates.length });
+    this.log("SignalResearch", "researching_signals", {
+      count: candidates.length,
+      symbols: [...new Set(candidates.map((c) => c.symbol))],
+    });
 
     // Aggregate signals by symbol (combine sources for the same ticker)
     const aggregated = new Map<string, { symbol: string; sentiment: number; sources: string[] }>();
@@ -3302,11 +3331,18 @@ Response format:
         time_in_force: timeInForce,
       });
 
-      this.log("Executor", "buy_executed", { symbol: orderSymbol, isCrypto, status: order.status, size: positionSize });
+      this.log("Executor", "buy_executed", {
+        symbol: orderSymbol,
+        isCrypto,
+        status: order.status,
+        size: Math.round(positionSize * 100) / 100,
+        confidence,
+        orderId: order.id,
+      });
       this.state.recentOrders[symbol] = Date.now();
       return true;
     } catch (error) {
-      this.log("Executor", "buy_failed", { symbol, error: String(error) });
+      this.log("Executor", "buy_failed", { symbol, error: String(error), size: positionSize, confidence });
       return false;
     }
   }
@@ -3787,8 +3823,22 @@ Response format:
       this.state.logs = this.state.logs.slice(-500);
     }
 
-    // Log to console for wrangler tail
-    console.log(`[${entry.timestamp}] [${agent}] ${action}`, JSON.stringify(details));
+    // Log to console for wrangler tail and session log (logs/<timestamp>.log)
+    const detailKeys = Object.keys(details);
+    if (detailKeys.length > 0) {
+      const detailPairs = detailKeys
+        .map((k) => {
+          const v = details[k];
+          if (v === undefined || v === null) return `${k}=null`;
+          if (Array.isArray(v)) return `${k}=[${v.join(",")}]`;
+          if (typeof v === "object") return `${k}=${JSON.stringify(v)}`;
+          return `${k}=${v}`;
+        })
+        .join(", ");
+      console.log(`[${entry.timestamp}] [${agent}] ${action} | ${detailPairs}`);
+    } else {
+      console.log(`[${entry.timestamp}] [${agent}] ${action}`);
+    }
   }
 
   public trackLLMCost(model: string, tokensIn: number, tokensOut: number, actualCost?: number): number {

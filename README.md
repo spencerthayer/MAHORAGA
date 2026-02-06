@@ -135,11 +135,19 @@ cd dashboard && npm install && npm run dev
 cp .env.example .dev.vars        # Edit with your API keys
 cp wrangler.example.jsonc wrangler.jsonc
 
+# Auto-authenticate the dashboard (optional, avoids manual token entry)
+echo "VITE_MAHORAGA_API_TOKEN=$(grep MAHORAGA_API_TOKEN .dev.vars | cut -d= -f2-)" > dashboard/.env.development
+
+# Run local D1 migrations
+npm run db:migrate
+
 # Start both backend and dashboard
 ./start
 ```
 
 This starts the Wrangler backend on `http://localhost:8787` and the React dashboard on `http://localhost:3000`. Press Ctrl+C to stop both.
+
+The `dashboard/.env.development` file auto-injects your API token so the dashboard authenticates without manual entry. Without it, you'll need to paste your `MAHORAGA_API_TOKEN` into the dashboard login screen on first visit.
 
 ```bash
 ./start              # Start both backend + dashboard

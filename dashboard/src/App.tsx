@@ -538,25 +538,58 @@ export default function App() {
     let openIndex = -1
     let closeIndex = -1
 
+    const extendedHours = config?.extended_hours_allowed ?? false
+    const exchanges = 'NYSE, NASDAQ, ARCA, AMEX, BATS'
+
     const openTooltip = [
-      `US EQUITIES OPEN ${marketOpenET} ET`,
-      'NYSE, NASDAQ, ARCA, AMEX, BATS',
+      `REGULAR SESSION ${marketOpenET} ET`,
+      exchanges,
+      ...(extendedHours ? ['Pre-market: 04:00 - 09:30 ET'] : []),
     ]
     const closeTooltip = [
-      `US EQUITIES CLOSE ${marketCloseET} ET`,
-      'NYSE, NASDAQ, ARCA, AMEX, BATS',
+      `REGULAR SESSION ENDS ${marketCloseET} ET`,
+      exchanges,
+      ...(extendedHours ? ['After-hours: 16:00 - 20:00 ET'] : []),
     ]
+
+    // Extended hours markers
+    const preMarketOpen = toMinutes('04:00')
+    const afterHoursClose = toMinutes('20:00')
+    let preMarketIndex = -1
+    let afterHoursIndex = -1
 
     portfolioHistory.forEach((s, i) => {
       const etTime = etFormatter.format(new Date(s.timestamp))
       const etMinutes = toMinutes(etTime)
 
+      // Pre-market open marker (4:00 AM ET)
+      if (extendedHours && etMinutes >= preMarketOpen && etMinutes < preMarketOpen + 15 && preMarketIndex === -1) {
+        preMarketIndex = i
+        markers.push({
+          index: i, label: 'PRE-MKT', color: 'var(--color-hud-warning)',
+          tooltip: ['PRE-MARKET OPEN 04:00 ET', exchanges, 'Limit orders only'],
+        })
+      }
+
+      // Regular session open
       if (etMinutes >= openMinutes && etMinutes < openMinutes + 15 && openIndex === -1) {
         openIndex = i
         markers.push({ index: i, label: 'OPEN', color: 'var(--color-hud-success)', tooltip: openTooltip })
-      } else if (etMinutes >= closeMinutes && etMinutes < closeMinutes + 15 && closeIndex === -1) {
+      }
+
+      // Regular session close
+      if (etMinutes >= closeMinutes && etMinutes < closeMinutes + 15 && closeIndex === -1) {
         closeIndex = i
         markers.push({ index: i, label: 'CLOSE', color: 'var(--color-hud-error)', tooltip: closeTooltip })
+      }
+
+      // After-hours close marker (8:00 PM ET)
+      if (extendedHours && etMinutes >= afterHoursClose && etMinutes < afterHoursClose + 15 && afterHoursIndex === -1) {
+        afterHoursIndex = i
+        markers.push({
+          index: i, label: 'AH-END', color: 'var(--color-hud-warning)',
+          tooltip: ['AFTER-HOURS CLOSE 20:00 ET', exchanges, 'Limit orders only'],
+        })
       }
     })
 
@@ -568,7 +601,7 @@ export default function App() {
       marketMarkers: markers.length > 0 ? markers : undefined,
       marketHoursZone: zone
     }
-  }, [portfolioHistory, portfolioPeriod, status?.marketSchedule])
+  }, [portfolioHistory, portfolioPeriod, status?.marketSchedule, config?.extended_hours_allowed])
 
   // Normalize position price histories to % change for stacked comparison view
   const normalizedPositionSeries = useMemo(() => {

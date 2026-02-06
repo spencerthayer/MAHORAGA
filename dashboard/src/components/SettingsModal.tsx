@@ -175,6 +175,30 @@ export function SettingsModal({ config, onSave, onClose, cryptoAssets = [] }: Se
             </div>
           </div>
 
+          {/* Extended Hours */}
+          <div>
+            <h3 className="hud-label mb-3 text-hud-warning">Extended Hours Trading</h3>
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="hud-input w-4 h-4"
+                    checked={localConfig.extended_hours_allowed || false}
+                    onChange={e => handleChange('extended_hours_allowed', e.target.checked)}
+                  />
+                  <span className="hud-label">Enable Extended Hours Trading</span>
+                </label>
+                <p className="text-hud-xs text-hud-text-dim mt-1">
+                  Pre-market 4:00–9:30 AM ET, After-hours 4:00–8:00 PM ET.
+                </p>
+                <p className="text-hud-xs text-hud-text-dim mt-1">
+                Limit orders only, lower liquidity.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Timing */}
           <div>
             <h3 className="hud-label mb-3 text-hud-primary">Polling Intervals</h3>

@@ -107,6 +107,9 @@ interface AgentConfig {
   // Allowed exchanges - only trade stocks listed on these exchanges (avoids OTC data issues)
   allowed_exchanges: string[];
 
+  // Extended hours trading
+  extended_hours_allowed: boolean; // [TOGGLE] Allow trading during pre-market (4-9:30 AM) and after-hours (4-8 PM)
+
   // P&L calculation - auto-captured from Alpaca on first run
   starting_equity?: number; // Auto-set from Alpaca account equity on first status call
 }
@@ -315,6 +318,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   crypto_stop_loss_pct: 5,
   ticker_blacklist: [],
   allowed_exchanges: ["NYSE", "NASDAQ", "ARCA", "AMEX", "BATS"],
+  extended_hours_allowed: false,
 };
 
 const DEFAULT_STATE: AgentState = {

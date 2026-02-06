@@ -151,6 +151,9 @@ export interface Config {
 
   // Custom ticker blacklist (insider trading restrictions, etc.)
   ticker_blacklist?: string[]
+
+  // Extended hours trading
+  extended_hours_allowed?: boolean
 }
 
 export interface CryptoAsset {

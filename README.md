@@ -319,6 +319,30 @@ Twitter is **not required** for the sentiment pipeline — it only confirms sign
 
 Rate-limited to ~200 reads/day (~$1–2/day). Results are cached for 5 minutes.
 
+StockTwits ──→ score × sourceWeight × freshness ──┐
+Reddit ────→ rawSentiment × (timeDecay × engagement × flair × sourceWeight) ──┤
+SEC ───────→ staticSentiment × sourceWeight × freshness ──┤
+Crypto ────→ momentum-based rawSentiment ──────────────────┘
+                                                           │
+                                              signalCache (top 200 by |sentiment|)
+                                                           │
+                                      ┌────────────────────┴─────────────────────┐
+                                      │                                          │
+                           researchTopSignals()                    analyzeSignalsWithLLM()
+                           raw_sentiment >= 0.3                    avgSentiment >= 0.15
+                           top 5 → individual LLM                  top 10 → batch LLM
+                                      │                                          │
+                                      └────────────────────┬─────────────────────┘
+                                                           │
+                                                  ┌── Twitter Confirm ──┐
+                                                  │  +15% if confirms   │
+                                                  │  -15% if contradicts│
+                                                  └────────┬────────────┘
+                                                           │
+                                                  confidence >= 0.6?
+                                                           │
+                                                     executeBuy()
+
 ## Discord Notifications
 
 Set `DISCORD_WEBHOOK_URL` to receive real-time trade alerts as rich embeds in a Discord channel. This is **optional** — if not set, notifications are silently skipped.

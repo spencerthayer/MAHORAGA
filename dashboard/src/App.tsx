@@ -14,7 +14,7 @@ import type { Status, Config, LogEntry, Signal, Position, SignalResearch, Portfo
 const API_BASE = '/api'
 
 function getApiToken(): string {
-  return localStorage.getItem('mahoraga_api_token') || (window as unknown as { VITE_MAHORAGA_API_TOKEN?: string }).VITE_MAHORAGA_API_TOKEN || ''
+  return localStorage.getItem('mahoraga_api_token') || import.meta.env.VITE_MAHORAGA_API_TOKEN || ''
 }
 
 function authFetch(url: string, options: RequestInit = {}): Promise<Response> {

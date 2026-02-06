@@ -196,18 +196,20 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                   onChange={e => handleChange('llm_provider', e.target.value as Config['llm_provider'])}
                 >
                   <option value="openai-raw">OpenAI Direct (default)</option>
+                  <option value="openrouter">OpenRouter (300+ models)</option>
                   <option value="ai-sdk">AI SDK (5 providers)</option>
                   <option value="cloudflare-gateway">Cloudflare AI Gateway</option>
                   {localConfig.llm_provider &&
-                    !['openai-raw', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) && (
+                    !['openai-raw', 'openrouter', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) && (
                       <option value={localConfig.llm_provider}>Custom (backend configured)</option>
                     )}
                 </select>
                 <p className="text-[9px] text-hud-text-dim mt-1">
                   {localConfig.llm_provider === 'ai-sdk' && 'Supports: OpenAI, Anthropic, Google, xAI, DeepSeek'}
                   {(!localConfig.llm_provider || localConfig.llm_provider === 'openai-raw') && 'Uses OPENAI_API_KEY directly (+ optional OPENAI_BASE_URL).'}
+                  {localConfig.llm_provider === 'openrouter' && 'Uses OPENAI_API_KEY with OpenRouter. Set OPENAI_BASE_URL=https://openrouter.ai/api/v1'}
                   {localConfig.llm_provider &&
-                    !['openai-raw', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) &&
+                    !['openai-raw', 'openrouter', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) &&
                     'Provider is configured in the backend; selection is hidden in the dashboard.'}
                   {localConfig.llm_provider === 'cloudflare-gateway' && 'Uses CLOUDFLARE_AI_GATEWAY_* env vars via Cloudflare AI Gateway /compat.'}
                 </p>
@@ -245,6 +247,38 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                       </optgroup>
                     </>
                   )}
+                  {localConfig.llm_provider === 'openrouter' && (
+                    <>
+                      <optgroup label="OpenAI">
+                        <option value="openai/gpt-5-mini">gpt-5-mini</option>
+                        <option value="openai/gpt-5-nano">gpt-5-nano</option>
+                        <option value="openai/gpt-4.1-mini">gpt-4.1-mini</option>
+                        <option value="openai/gpt-4.1-nano">gpt-4.1-nano</option>
+                        <option value="openai/gpt-4o-mini">gpt-4o-mini</option>
+                      </optgroup>
+                      <optgroup label="Anthropic">
+                        <option value="anthropic/claude-haiku-4.5">claude-haiku-4.5</option>
+                        <option value="anthropic/claude-3.5-haiku">claude-3.5-haiku</option>
+                      </optgroup>
+                      <optgroup label="Google">
+                        <option value="google/gemini-2.5-flash">gemini-2.5-flash</option>
+                        <option value="google/gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+                        <option value="google/gemini-2.0-flash-lite-001">gemini-2.0-flash-lite</option>
+                      </optgroup>
+                      <optgroup label="DeepSeek">
+                        <option value="deepseek/deepseek-chat">deepseek-chat (V3)</option>
+                        <option value="deepseek/deepseek-chat-v3.1">deepseek-chat-v3.1</option>
+                      </optgroup>
+                      <optgroup label="Qwen">
+                        <option value="qwen/qwen3-30b-a3b">qwen3-30b-a3b</option>
+                        <option value="qwen/qwen3-8b">qwen3-8b</option>
+                      </optgroup>
+                      <optgroup label="Meta">
+                        <option value="meta-llama/llama-4-scout">llama-4-scout</option>
+                        <option value="meta-llama/llama-3.3-70b-instruct">llama-3.3-70b</option>
+                      </optgroup>
+                    </>
+                  )}
                   {localConfig.llm_provider === 'cloudflare-gateway' && (
                     <>
                       <optgroup label="OpenAI">
@@ -263,7 +297,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                     </>
                   )}
                   {localConfig.llm_provider &&
-                    !['openai-raw', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) && (
+                    !['openai-raw', 'openrouter', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) && (
                       <option value={localConfig.llm_model}>{localConfig.llm_model}</option>
                     )}
                 </select>
@@ -309,6 +343,44 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                       </optgroup>
                     </>
                   )}
+                  {localConfig.llm_provider === 'openrouter' && (
+                    <>
+                      <optgroup label="OpenAI">
+                        <option value="openai/gpt-5.2">gpt-5.2 (best)</option>
+                        <option value="openai/gpt-5.1">gpt-5.1</option>
+                        <option value="openai/gpt-5">gpt-5</option>
+                        <option value="openai/gpt-4.1">gpt-4.1</option>
+                        <option value="openai/gpt-4o">gpt-4o</option>
+                        <option value="openai/o4-mini">o4-mini (reasoning)</option>
+                        <option value="openai/o3">o3 (reasoning)</option>
+                      </optgroup>
+                      <optgroup label="Anthropic">
+                        <option value="anthropic/claude-sonnet-4.5">claude-sonnet-4.5 (best)</option>
+                        <option value="anthropic/claude-sonnet-4">claude-sonnet-4</option>
+                        <option value="anthropic/claude-opus-4.6">claude-opus-4.6</option>
+                        <option value="anthropic/claude-opus-4.5">claude-opus-4.5</option>
+                        <option value="anthropic/claude-3.7-sonnet">claude-3.7-sonnet</option>
+                      </optgroup>
+                      <optgroup label="Google">
+                        <option value="google/gemini-2.5-pro">gemini-2.5-pro</option>
+                        <option value="google/gemini-3-pro-preview">gemini-3-pro (preview)</option>
+                        <option value="google/gemini-2.5-flash">gemini-2.5-flash</option>
+                      </optgroup>
+                      <optgroup label="xAI">
+                        <option value="x-ai/grok-4">grok-4</option>
+                        <option value="x-ai/grok-4-fast">grok-4-fast</option>
+                        <option value="x-ai/grok-3">grok-3</option>
+                      </optgroup>
+                      <optgroup label="DeepSeek">
+                        <option value="deepseek/deepseek-r1-0528">deepseek-r1 (reasoning)</option>
+                        <option value="deepseek/deepseek-v3.2">deepseek-v3.2</option>
+                      </optgroup>
+                      <optgroup label="Qwen">
+                        <option value="qwen/qwen3-235b-a22b">qwen3-235b</option>
+                        <option value="qwen/qwen3-coder">qwen3-coder</option>
+                      </optgroup>
+                    </>
+                  )}
                   {localConfig.llm_provider === 'cloudflare-gateway' && (
                     <>
                       <optgroup label="OpenAI">
@@ -330,7 +402,7 @@ export function SettingsModal({ config, onSave, onClose }: SettingsModalProps) {
                     </>
                   )}
                   {localConfig.llm_provider &&
-                    !['openai-raw', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) && (
+                    !['openai-raw', 'openrouter', 'ai-sdk', 'cloudflare-gateway'].includes(localConfig.llm_provider) && (
                       <option value={localConfig.llm_analyst_model || 'gpt-4o'}>
                         {localConfig.llm_analyst_model || 'gpt-4o'}
                       </option>

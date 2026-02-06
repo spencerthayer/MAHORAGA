@@ -74,7 +74,7 @@ interface AgentConfig {
   stale_social_volume_decay: number; // [TUNE] Exit if volume drops to this % of entry
 
   // LLM configuration
-  llm_provider: "openai-raw" | "ai-sdk" | "cloudflare-gateway"; // [TUNE] Provider: openai-raw, ai-sdk, cloudflare-gateway
+  llm_provider: "openai-raw" | "openrouter" | "ai-sdk" | "cloudflare-gateway"; // [TUNE] Provider: openai-raw, openrouter, ai-sdk, cloudflare-gateway
   llm_model: string; // [TUNE] Model for quick research (gpt-4o-mini)
   llm_analyst_model: string; // [TUNE] Model for deep analysis (gpt-4o)
   llm_min_hold_minutes: number; // [TUNE] Min minutes before LLM can recommend sell (default: 30)

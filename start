@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # ============================================================================
-# start.sh — Start the Mahoraga backend and dashboard
+# start — Start the Mahoraga backend and dashboard
 #
 # Usage:
-#   ./scripts/start.sh          # start both
-#   ./scripts/start.sh backend  # backend only
-#   ./scripts/start.sh dashboard # dashboard only
+#   ./start              # start both
+#   ./start backend      # backend only
+#   ./start dashboard    # dashboard only
 # ============================================================================
+
+clear
+echo "Current directory: $(pwd)"
+echo "Command: ./start"
+echo "Starting Mahoraga... $(date)"
+echo "------------------------------------------------"
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 BACKEND_PORT="${WRANGLER_PORT:-8787}"
 DASHBOARD_PORT=3000

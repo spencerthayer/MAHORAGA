@@ -4,13 +4,14 @@ import { createAISDKProvider, SUPPORTED_PROVIDERS, type SupportedProvider } from
 import { createCloudflareGatewayProvider } from "./cloudflare-gateway";
 import { createOpenAIProvider } from "./openai";
 
-export type LLMProviderType = "openai-raw" | "ai-sdk" | "cloudflare-gateway";
+export type LLMProviderType = "openai-raw" | "openrouter" | "ai-sdk" | "cloudflare-gateway";
 
 /**
  * Factory function to create LLM provider based on environment configuration.
  *
  * Provider selection (via LLM_PROVIDER env):
  * - "openai-raw": Direct OpenAI API calls (default, backward compatible)
+ * - "openrouter": OpenRouter proxy (OpenAI-compatible, 300+ models)
  * - "ai-sdk": Vercel AI SDK with 5 providers (OpenAI, Anthropic, Google, xAI, DeepSeek)
  * - "cloudflare-gateway": Cloudflare AI Gateway (/compat) for unified access
  *
@@ -40,6 +41,21 @@ export function createLLMProvider(env: Env): LLMProvider | null {
         gatewayId: env.CLOUDFLARE_AI_GATEWAY_ID,
         token: env.CLOUDFLARE_AI_GATEWAY_TOKEN,
         model: effectiveModel,
+      });
+    }
+
+    case "openrouter": {
+      // OpenRouter: OpenAI-compatible API at https://openrouter.ai/api/v1
+      // Always use the full model ID (e.g. "openai/gpt-5-mini") for routing.
+      if (!env.OPENAI_API_KEY) {
+        console.warn("LLM_PROVIDER=openrouter requires OPENAI_API_KEY (your OpenRouter API key)");
+        return null;
+      }
+      const openrouterBaseUrl = openaiBaseUrl || "https://openrouter.ai/api/v1";
+      return createOpenAIProvider({
+        apiKey: env.OPENAI_API_KEY,
+        model,
+        baseUrl: openrouterBaseUrl,
       });
     }
 
@@ -107,6 +123,8 @@ export function isLLMConfigured(env: Env): boolean {
         env.XAI_API_KEY ||
         env.DEEPSEEK_API_KEY
       );
+    case "openrouter":
+      return !!env.OPENAI_API_KEY;
     default:
       return !!env.OPENAI_API_KEY;
   }

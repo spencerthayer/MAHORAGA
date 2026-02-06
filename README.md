@@ -6,7 +6,7 @@ An autonomous, LLM-powered trading agent that runs 24/7 on Cloudflare Workers.
 
 [![Discord](https://img.shields.io/discord/1467592472158015553?color=7289da&label=Discord&logo=discord&logoColor=white)](https://discord.gg/Ys8KpsW5NN)
 
-MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK) to analyze signals, and executes trades through Alpaca. It runs as a Cloudflare Durable Object with persistent state, automatic restarts, and 24/7 crypto trading support.
+MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK, or 300+ models via OpenRouter) to analyze signals, and executes trades through Alpaca. It runs as a Cloudflare Durable Object with persistent state, automatic restarts, and 24/7 crypto trading support.
 
 <img width="1278" height="957" alt="dashboard" src="https://github.com/user-attachments/assets/56473ab6-e2c6-45fc-9e32-cf85e69f1a2d" />
 
@@ -14,7 +14,7 @@ MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, 
 
 - **24/7 Operation** — Runs on Cloudflare Workers, no local machine required
 - **Multi-Source Signals** — StockTwits, Reddit (4 subreddits), Twitter confirmation
-- **Multi-Provider LLM** — OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK or Cloudflare AI Gateway
+- **Multi-Provider LLM** — OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK, OpenRouter (300+ models), or Cloudflare AI Gateway
 - **Crypto Trading** — Trade BTC, ETH, SOL around the clock
 - **Options Support** — High-conviction options plays
 - **Staleness Detection** — Auto-exit positions that lose momentum
@@ -27,7 +27,7 @@ MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, 
 - Node.js 18+
 - Cloudflare account (free tier works)
 - Alpaca account (free, paper trading supported)
-- LLM API key (OpenAI, Anthropic, Google, xAI, DeepSeek) or Cloudflare AI Gateway credentials
+- LLM API key (OpenAI, Anthropic, Google, xAI, DeepSeek), OpenRouter API key, or Cloudflare AI Gateway credentials
 
 ## Quick Start
 
@@ -37,6 +37,7 @@ MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, 
 git clone https://github.com/ygwyg/MAHORAGA.git
 cd mahoraga
 npm install
+cd dashboard && npm install && cd ..
 ```
 
 ### 2. Create Cloudflare resources
@@ -66,12 +67,12 @@ npx wrangler secret put ALPACA_API_SECRET
 npx wrangler secret put MAHORAGA_API_TOKEN
 
 # LLM Provider (choose one mode)
-npx wrangler secret put LLM_PROVIDER  # "openai-raw" (default), "ai-sdk", or "cloudflare-gateway"
-npx wrangler secret put LLM_MODEL     # e.g. "gpt-4o-mini" or "anthropic/claude-sonnet-4"
+npx wrangler secret put LLM_PROVIDER  # "openai-raw" (default), "openrouter", "ai-sdk", or "cloudflare-gateway"
+npx wrangler secret put LLM_MODEL     # e.g. "gpt-4o-mini" or "openai/gpt-5-mini" (OpenRouter)
 
 # LLM API Keys (based on provider mode)
-npx wrangler secret put OPENAI_API_KEY         # For openai-raw or ai-sdk with OpenAI
-npx wrangler secret put OPENAI_BASE_URL        # Optional: override OpenAI base URL for openai-raw and ai-sdk (OpenAI models)
+npx wrangler secret put OPENAI_API_KEY         # For openai-raw, openrouter, or ai-sdk with OpenAI
+npx wrangler secret put OPENAI_BASE_URL        # Optional: override base URL (auto-set for openrouter)
 # npx wrangler secret put ANTHROPIC_API_KEY    # For ai-sdk with Anthropic
 # npx wrangler secret put GOOGLE_GENERATIVE_AI_API_KEY  # For ai-sdk with Google
 # npx wrangler secret put XAI_API_KEY          # For ai-sdk with xAI/Grok
@@ -121,20 +122,60 @@ curl -H "Authorization: Bearer $MAHORAGA_TOKEN" \
 curl -H "Authorization: Bearer $KILL_SWITCH_SECRET" \
   https://mahoraga.bernardoalmeida2004.workers.dev/agent/kill
 
-# Run dashboard locally
+# Run dashboard locally (or use ./start for both backend + dashboard)
 cd dashboard && npm install && npm run dev
 ```
 
 ## Local Development
 
+### Quick start (single command)
+
+```bash
+# Copy config files (first time only)
+cp .env.example .dev.vars        # Edit with your API keys
+cp wrangler.example.jsonc wrangler.jsonc
+
+# Start both backend and dashboard
+./start
+```
+
+This starts the Wrangler backend on `http://localhost:8787` and the React dashboard on `http://localhost:3000`. Press Ctrl+C to stop both.
+
+```bash
+./start              # Start both backend + dashboard
+./start backend      # Backend only (port 8787)
+./start dashboard    # Dashboard only (port 3000)
+```
+
+### Manual start (separate terminals)
+
 ```bash
 # Terminal 1 - Start wrangler
-npx wrangler dev
+npm run dev
 
-# Terminal 2 - Start dashboard  
+# Terminal 2 - Start dashboard
 cd dashboard && npm run dev
+```
 
-# Terminal 3 - Enable the agent
+### Test Alpaca connection
+
+```bash
+npm run test:alpaca
+```
+
+Verifies your Alpaca API keys by testing account authentication, market clock, and a live AAPL snapshot.
+
+### List OpenRouter models
+
+```bash
+./scripts/list-models.sh
+```
+
+Fetches all 300+ OpenRouter models with pricing and writes them to `scripts/openrouter-models.json`, sorted by cost (cheapest first).
+
+### Enable the agent
+
+```bash
 curl -H "Authorization: Bearer $MAHORAGA_TOKEN" \
   http://localhost:8787/agent/enable
 ```
@@ -169,22 +210,38 @@ See `docs/harness.html` for detailed customization guide.
 | `min_analyst_confidence` | 0.6 | Minimum LLM confidence to trade |
 | `options_enabled` | false | Enable options trading |
 | `crypto_enabled` | false | Enable 24/7 crypto trading |
-| `llm_model` | gpt-4o-mini | Research model (cheap, for bulk analysis) |
-| `llm_analyst_model` | gpt-4o | Analyst model (smart, for trading decisions) |
+| `llm_model` | gpt-4o-mini | Research model. Use full ID for OpenRouter, e.g. `openai/gpt-5-mini` |
+| `llm_analyst_model` | gpt-4o | Analyst model. Use full ID for OpenRouter, e.g. `openai/gpt-5.2` |
 
 ### LLM Provider Configuration
 
-MAHORAGA supports multiple LLM providers via three modes:
+MAHORAGA supports multiple LLM providers via four modes:
 
 | Mode | Description | Required Env Vars |
 |------|-------------|-------------------|
 | `openai-raw` | Direct OpenAI API (default) | `OPENAI_API_KEY` |
+| `openrouter` | OpenRouter proxy (300+ models) | `OPENAI_API_KEY` (your OpenRouter key) |
 | `ai-sdk` | Vercel AI SDK with 5 providers | One or more provider keys |
 | `cloudflare-gateway` | Cloudflare AI Gateway (/compat) | `CLOUDFLARE_AI_GATEWAY_ACCOUNT_ID`, `CLOUDFLARE_AI_GATEWAY_ID`, `CLOUDFLARE_AI_GATEWAY_TOKEN` |
 
+**OpenRouter Setup:**
+
+OpenRouter gives you access to 300+ models (OpenAI, Anthropic, Google, Meta, DeepSeek, xAI, and more) through a single API key. Get your key at [openrouter.ai/keys](https://openrouter.ai/keys).
+
+```bash
+# .dev.vars (local) or wrangler secrets (production)
+LLM_PROVIDER=openrouter
+LLM_MODEL=openai/gpt-5-mini
+OPENAI_API_KEY=sk-or-v1-your-openrouter-key
+```
+
+Models use the `provider/model` format (e.g. `openai/gpt-5-mini`, `anthropic/claude-sonnet-4.5`, `google/gemini-2.5-pro`). The base URL is auto-configured to `https://openrouter.ai/api/v1`.
+
+Run `./scripts/list-models.sh` to fetch all available models with pricing, sorted by cost.
+
 **Optional OpenAI Base URL Override:**
 
-- `OPENAI_BASE_URL` — Override the base URL used for OpenAI requests. Applies to `LLM_PROVIDER=openai-raw` and OpenAI models in `LLM_PROVIDER=ai-sdk` (models starting with `openai/`). Default: `https://api.openai.com/v1`.
+- `OPENAI_BASE_URL` — Override the base URL for OpenAI requests. Applies to `openai-raw` and `ai-sdk` (OpenAI models). Auto-set for `openrouter`. Default: `https://api.openai.com/v1`.
 
 **Cloudflare AI Gateway Notes:**
 
@@ -202,7 +259,15 @@ MAHORAGA supports multiple LLM providers via three modes:
 | xAI (Grok) | `XAI_API_KEY` | `xai/grok-4`, `xai/grok-3` |
 | DeepSeek | `DEEPSEEK_API_KEY` | `deepseek/deepseek-chat`, `deepseek/deepseek-reasoner` |
 
-**Example: Using Claude with AI SDK:**
+**Example: Using Claude via OpenRouter:**
+
+```bash
+npx wrangler secret put LLM_PROVIDER  # Set to "openrouter"
+npx wrangler secret put LLM_MODEL     # Set to "anthropic/claude-sonnet-4.5"
+npx wrangler secret put OPENAI_API_KEY # Your OpenRouter API key (sk-or-...)
+```
+
+**Example: Using Claude with AI SDK (direct):**
 
 ```bash
 npx wrangler secret put LLM_PROVIDER      # Set to "ai-sdk"
@@ -267,7 +332,9 @@ This creates a Cloudflare Access Application with email verification or One-Time
 
 ```
 mahoraga/
+├── start                       # Dev launcher (backend + dashboard)
 ├── wrangler.jsonc              # Cloudflare Workers config
+├── .dev.vars                   # Local secrets (gitignored)
 ├── src/
 │   ├── index.ts                # Entry point
 │   ├── durable-objects/
@@ -275,8 +342,12 @@ mahoraga/
 │   │   └── session.ts
 │   ├── mcp/                    # MCP server & tools
 │   ├── policy/                 # Trade validation
-│   └── providers/              # Alpaca, OpenAI clients
-├── dashboard/                  # React dashboard
+│   └── providers/              # Alpaca, LLM, news clients
+├── scripts/
+│   ├── test-alpaca.ts          # Alpaca API connection test
+│   ├── list-models.sh          # Fetch OpenRouter models + pricing
+│   └── setup-access.ts         # Cloudflare Access setup
+├── dashboard/                  # React dashboard (Vite + React)
 ├── docs/                       # Documentation
 └── migrations/                 # D1 database migrations
 ```

@@ -937,7 +937,11 @@ export class MahoragaHarness extends DurableObject<Env> {
         await this.runCryptoTrading(alpaca, positions);
       }
 
-      if (clock.is_open) {
+      const canTrade = this.canTradeEquities(clock);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:alarm:canTrade',message:'can_trade_equities',data:{canTrade,clockIsOpen:clock.is_open,extendedHoursAllowed:this.state.config.extended_hours_allowed,isInExtendedHours:this.isInExtendedHours()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+      if (canTrade) {
         if (this.isMarketJustOpened() && this.state.premarketPlan) {
           await this.executePremarketPlan();
         }
@@ -1788,7 +1792,10 @@ export class MahoragaHarness extends DurableObject<Env> {
     if (!this.state.config.crypto_enabled) return [];
 
     const signals: Signal[] = [];
-    const symbols = this.state.config.crypto_symbols || ["BTC/USD", "ETH/USD", "SOL/USD"];
+    const rawSymbols = this.state.config.crypto_symbols || ["BTC/USD", "ETH/USD", "SOL/USD"];
+    const symbols = rawSymbols.filter((s) => typeof s === "string" && s.trim().length > 0);
+    if (symbols.length === 0) return [];
+
     const alpaca = createAlpacaProviders(this.env);
 
     for (const symbol of symbols) {
@@ -3331,10 +3338,17 @@ Response format:
       alpaca.trading.getClock(),
     ]);
 
-    if (!account || !clock.is_open) {
+    const canTrade = this.canTradeEquities(clock);
+    if (!account || !canTrade) {
       this.log("System", "analyst_skipped", { reason: "Account unavailable or market closed" });
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:runAnalyst:skip',message:'analyst_skipped',data:{reason:!account?'no_account':'market_closed',canTrade,clockIsOpen:clock.is_open},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       return;
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:runAnalyst:proceed',message:'analyst_proceeding',data:{positionsCount:positions.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion
 
     const heldSymbols = new Set(positions.map((p) => p.symbol));
 
@@ -3560,12 +3574,15 @@ Response format:
         }
       }
 
+      const extendedHours =
+        !isCrypto && this.state.config.extended_hours_allowed && this.isInExtendedHours();
       const order = await alpaca.trading.createOrder({
         symbol: orderSymbol,
         notional: Math.round(positionSize * 100) / 100,
         side: "buy",
         type: "market",
         time_in_force: timeInForce,
+        ...(extendedHours ? { extended_hours: true } : {}),
       });
 
       this.log("Executor", "buy_executed", {
@@ -3600,8 +3617,31 @@ Response format:
     }
 
     try {
-      await alpaca.trading.closePosition(symbol);
-      this.log("Executor", "sell_executed", { symbol, reason });
+      const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
+      const extendedHours =
+        !isCrypto && this.state.config.extended_hours_allowed && this.isInExtendedHours();
+
+      if (extendedHours) {
+        const positions = await alpaca.trading.getPositions();
+        const pos = positions.find((p) => p.symbol === symbol);
+        if (!pos || pos.qty <= 0) {
+          this.log("Executor", "sell_failed", { symbol, error: "Position not found or zero qty" });
+          return false;
+        }
+        const qty = Math.abs(pos.qty);
+        const orderSymbol = isCrypto ? normalizeCryptoSymbol(symbol) : symbol;
+        await alpaca.trading.createOrder({
+          symbol: orderSymbol,
+          qty,
+          side: "sell",
+          type: "market",
+          time_in_force: "day",
+          extended_hours: true,
+        });
+      } else {
+        await alpaca.trading.closePosition(symbol);
+      }
+      this.log("Executor", "sell_executed", { symbol, reason, extended_hours: extendedHours });
 
       delete this.state.positionEntries[symbol];
       delete this.state.socialHistory[symbol];
@@ -3946,6 +3986,38 @@ Response format:
       }
     }
     return false;
+  }
+
+  /** True if current time in America/New_York is within pre-market (4:00-9:30) or after-hours (16:00-20:00) on a weekday. */
+  private isInExtendedHours(): boolean {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      weekday: "short",
+    }).formatToParts(now);
+    const hour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+    const minute = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+    const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+    const weekend = weekday === "Sat" || weekday === "Sun";
+    if (weekend) return false;
+    const minutesSinceMidnight = hour * 60 + minute;
+    const preMarketStart = 4 * 60; // 4:00
+    const preMarketEnd = 9 * 60 + 30; // 9:30
+    const afterHoursStart = 16 * 60; // 16:00
+    const afterHoursEnd = 20 * 60; // 20:00
+    return (
+      (minutesSinceMidnight >= preMarketStart && minutesSinceMidnight < preMarketEnd) ||
+      (minutesSinceMidnight >= afterHoursStart && minutesSinceMidnight < afterHoursEnd)
+    );
+  }
+
+  /** True when equity trading is allowed: regular session or extended hours (if config allows). */
+  private canTradeEquities(clock: MarketClock): boolean {
+    if (clock.is_open) return true;
+    return !!(this.state.config.extended_hours_allowed && this.isInExtendedHours());
   }
 
   private async runPreMarketAnalysis(): Promise<void> {

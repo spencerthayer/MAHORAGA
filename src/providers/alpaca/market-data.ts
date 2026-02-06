@@ -189,6 +189,9 @@ export class AlpacaMarketDataProvider implements MarketDataProvider {
   }
 
   async getCryptoSnapshot(symbol: string): Promise<Snapshot> {
+    if (!symbol || !String(symbol).trim()) {
+      throw new Error("Crypto symbol is required (empty symbol list)");
+    }
     const response = await this.client.dataRequest<{ snapshots: AlpacaSnapshotsResponse }>(
       "GET",
       "/v1beta3/crypto/us/snapshots",

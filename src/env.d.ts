@@ -23,6 +23,7 @@ export interface Env {
   DISCORD_WEBHOOK_URL?: string;
   FINNHUB_API_KEY?: string;
   FMP_API_KEY?: string;
+  QUIVER_API_TOKEN?: string;
   MAHORAGA_API_TOKEN: string;
   KILL_SWITCH_SECRET: string;
 

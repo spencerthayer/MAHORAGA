@@ -80,6 +80,8 @@ export interface Signal {
   isCrypto?: boolean
   momentum?: number
   price?: number
+  /** Number of sources that contributed (multi-source = stronger signal) */
+  source_count?: number
 }
 
 export interface LogEntry {

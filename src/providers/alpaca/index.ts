@@ -3,12 +3,14 @@ import { parseBoolean } from "../../lib/utils";
 import { type AlpacaClientConfig, createAlpacaClient } from "./client";
 import { type AlpacaMarketDataProvider, createAlpacaMarketDataProvider } from "./market-data";
 import { type AlpacaOptionsProvider, createAlpacaOptionsProvider } from "./options";
+import { createAlpacaScreenerProvider } from "./screener";
 import { type AlpacaTradingProvider, createAlpacaTradingProvider } from "./trading";
 
 export interface AlpacaProviders {
   trading: AlpacaTradingProvider;
   marketData: AlpacaMarketDataProvider;
   options: AlpacaOptionsProvider;
+  screener: ReturnType<typeof createAlpacaScreenerProvider>;
 }
 
 export function createAlpacaProviders(env: Env): AlpacaProviders {
@@ -24,6 +26,7 @@ export function createAlpacaProviders(env: Env): AlpacaProviders {
     trading: createAlpacaTradingProvider(client),
     marketData: createAlpacaMarketDataProvider(client),
     options: createAlpacaOptionsProvider(client),
+    screener: createAlpacaScreenerProvider(client),
   };
 }
 

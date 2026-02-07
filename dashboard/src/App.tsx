@@ -340,6 +340,8 @@ export default function App() {
   const [portfolioPeriod, setPortfolioPeriod] = useState<'1D' | '1W' | '1M'>('1D')
   const [crtEnabled, setCrtEnabled] = useState(() => localStorage.getItem('mahoraga_crt') === 'true')
   const [cryptoAssets, setCryptoAssets] = useState<CryptoAsset[]>([])
+  type SignalFilter = 'all' | 'social' | 'market_data' | 'sec' | 'crypto'
+  const [signalFilter, setSignalFilter] = useState<SignalFilter>('all')
 
   useEffect(() => {
     const checkSetup = async () => {
@@ -432,6 +434,18 @@ export default function App() {
   const account = status?.account
   const positions = status?.positions || []
   const signals = status?.signals || []
+  const getSignalCategory = (sig: Signal): SignalFilter => {
+    if (sig.isCrypto || (sig.source && sig.source.toLowerCase().includes('crypto'))) return 'crypto'
+    const s = (sig.source || '').toLowerCase()
+    if (s.startsWith('reddit_') || s === 'stocktwits' || s === 'quiver_wsb') return 'social'
+    if (s.startsWith('fmp_') || s.startsWith('alpaca_') || s === 'finnhub_news') return 'market_data'
+    if (s.includes('sec') || s === 'quiver_congress' || s === 'quiver_insiders' || s === 'finnhub_insider') return 'sec'
+    return 'market_data'
+  }
+  const filteredSignals = useMemo(() => {
+    if (signalFilter === 'all') return signals
+    return signals.filter((sig: Signal) => getSignalCategory(sig) === signalFilter)
+  }, [signals, signalFilter])
   const logs = status?.logs || []
   const costs = status?.costs || { total_usd: 0, calls: 0, tokens_in: 0, tokens_out: 0, by_model: {} }
   const config = status?.config
@@ -1008,12 +1022,31 @@ export default function App() {
 
           {/* Row 3: Signals, Activity, Research */}
           <div className="col-span-4 md:col-span-4 lg:col-span-4">
-            <Panel title="ACTIVE SIGNALS" titleRight={signals.length.toString()} className="h-80">
-              <div className="overflow-y-auto h-full space-y-1">
-                {signals.length === 0 ? (
-                  <div className="text-hud-text-dim text-sm py-4 text-center">Gathering signals...</div>
+            <Panel title="ACTIVE SIGNALS" titleRight={signalFilter === 'all' ? signals.length.toString() : `${filteredSignals.length} / ${signals.length}`} className="h-80">
+              <div className="flex flex-wrap gap-1 mb-2 shrink-0">
+                {(['all', 'social', 'market_data', 'sec', 'crypto'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setSignalFilter(f)}
+                    className={clsx(
+                      'px-2 py-0.5 text-xs rounded border transition-colors',
+                      signalFilter === f
+                        ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
+                        : 'border-hud-line/50 text-hud-text-dim hover:border-hud-line hover:text-hud-text'
+                    )}
+                  >
+                    {f === 'all' ? 'ALL' : f === 'market_data' ? 'MARKET' : f.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div className="overflow-y-auto h-full space-y-1 flex-1 min-h-0">
+                {filteredSignals.length === 0 ? (
+                  <div className="text-hud-text-dim text-sm py-4 text-center">
+                    {signals.length === 0 ? 'Gathering signals...' : `No ${signalFilter} signals`}
+                  </div>
                 ) : (
-                  signals.slice(0, 20).map((sig: Signal, i: number) => (
+                  filteredSignals.map((sig: Signal, i: number) => (
                     <Tooltip
                       key={`${sig.symbol}-${sig.source}-${i}`}
                       position="right"
@@ -1066,6 +1099,9 @@ export default function App() {
                           />
                           {sig.isCrypto && <span className="text-hud-warning text-xs">₿</span>}
                           <span className="hud-value-sm">{sig.symbol}</span>
+                          {sig.source_count != null && sig.source_count >= 2 && (
+                            <span className="text-[10px] px-1 rounded bg-cyan-500/20 text-cyan-300 font-medium">STRONG</span>
+                          )}
                           <span className={clsx('hud-label', sig.isCrypto ? 'text-hud-warning' : '')}>{sig.source.toUpperCase()}</span>
                         </div>
                         <div className="flex items-center gap-3">

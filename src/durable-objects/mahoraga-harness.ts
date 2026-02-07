@@ -41,7 +41,9 @@ import { createAlpacaProviders } from "../providers/alpaca";
 import { createLLMProvider } from "../providers/llm/factory";
 import { createFinnhubProvider } from "../providers/finnhub";
 import { createFMPProvider } from "../providers/fmp";
+import { createQuiverQuantProvider } from "../providers/social/quiver-quant";
 import type { Account, LLMProvider, MarketClock, Position } from "../providers/types";
+import { RateLimiter } from "../lib/rate-limiter";
 
 // ============================================================================
 // SECTION 1: TYPES & CONFIGURATION
@@ -136,6 +138,8 @@ interface Signal {
   isCrypto?: boolean;
   momentum?: number;
   price?: number;
+  /** Number of distinct sources that contributed to this signal (for multi-source bonus) */
+  source_count?: number;
 }
 
 interface PositionEntry {
@@ -248,11 +252,29 @@ const SOURCE_CONFIG = {
     reddit_stocks: 0.9,
     reddit_investing: 0.8,
     reddit_options: 0.85,
+    reddit_pennystocks: 0.65,
+    reddit_smallstreetbets: 0.65,
+    reddit_thetagang: 0.75,
+    reddit_dividends: 0.8,
+    reddit_securityanalysis: 0.85,
     twitter_fintwit: 0.95,
     twitter_news: 0.9,
     sec_8k: 0.95,
     sec_4: 0.9,
     sec_13f: 0.7,
+    finnhub_news: 0.75,
+    finnhub_insider: 0.85,
+    finnhub_analyst: 0.9,
+    fmp_gainers: 0.8,
+    fmp_losers: 0.5,
+    fmp_actives: 0.7,
+    quiver_wsb: 0.7,
+    quiver_congress: 0.8,
+    quiver_insiders: 0.85,
+    quiver_offexchange: 0.65,
+    alpaca_actives: 0.75,
+    alpaca_movers: 0.8,
+    alpaca_news: 0.75,
   },
   // [TUNE] Reddit flair multipliers - boost/penalize based on post type
   flairMultipliers: {
@@ -923,7 +945,7 @@ export class MahoragaHarness extends DurableObject<Env> {
       }
 
       if (now - this.state.lastResearchRun >= RESEARCH_INTERVAL_MS) {
-        await this.researchTopSignals(5);
+        await this.researchTopSignals(10);
         this.state.lastResearchRun = now;
       }
 
@@ -1516,27 +1538,93 @@ export class MahoragaHarness extends DurableObject<Env> {
   // Each gatherer returns Signal[] which get merged into signalCache.
   // ============================================================================
 
-  private async runDataGatherers(): Promise<void> {
-    this.log("System", "gathering_data", { sources: ["StockTwits", "Reddit", "Crypto", "SEC"] });
+  private _rateLimiter: RateLimiter | null = null;
 
+  private async runDataGatherers(): Promise<void> {
+    this.log("System", "gathering_data", { sources: ["StockTwits", "Reddit", "Crypto", "SEC", "Finnhub", "FMP", "QuiverQuant", "AlpacaScreener", "AlpacaNews"] });
+
+    this._rateLimiter = new RateLimiter();
     await tickerCache.refreshSecTickersIfNeeded();
 
-    const [stocktwitsSignals, redditSignals, cryptoSignals, secSignals] = await Promise.all([
+    const [stocktwitsSignals, redditSignals, cryptoSignals, secSignals, finnhubSignals, fmpSignals, quiverSignals, alpacaScreenerSignals, alpacaNewsSignals] = await Promise.all([
       this.gatherStockTwits(),
       this.gatherReddit(),
       this.gatherCrypto(),
       this.gatherSECFilings(),
+      this.gatherFinnhub(),
+      this.gatherFMPScreener(),
+      this.gatherQuiverQuant(),
+      this.gatherAlpacaScreener(),
+      this.gatherAlpacaNews(),
     ]);
 
-    const allSignals = [...stocktwitsSignals, ...redditSignals, ...cryptoSignals, ...secSignals];
+    const allSignals = [
+      ...stocktwitsSignals,
+      ...redditSignals,
+      ...cryptoSignals,
+      ...secSignals,
+      ...finnhubSignals,
+      ...fmpSignals,
+      ...quiverSignals,
+      ...alpacaScreenerSignals,
+      ...alpacaNewsSignals,
+    ];
 
-    const MAX_SIGNALS = 200;
+    const MAX_SIGNALS = 500;
     const MAX_AGE_MS = 24 * 60 * 60 * 1000;
     const now = Date.now();
 
-    const freshSignals = allSignals
-      .filter((s) => now - s.timestamp < MAX_AGE_MS)
-      .sort((a, b) => Math.abs(b.sentiment) - Math.abs(a.sentiment))
+    const freshRaw = allSignals.filter((s) => now - s.timestamp < MAX_AGE_MS);
+
+    // Deduplicate by symbol: merge into one signal per symbol with combined confidence and source_count
+    const bySymbol = new Map<
+      string,
+      { sentiment: number; raw_sentiment: number; volume: number; sources: string[]; best: Signal }
+    >();
+    for (const s of freshRaw) {
+      const sym = s.symbol.toUpperCase();
+      const existing = bySymbol.get(sym);
+      if (!existing) {
+        bySymbol.set(sym, {
+          sentiment: s.sentiment,
+          raw_sentiment: s.raw_sentiment,
+          volume: s.volume,
+          sources: [s.source_detail || s.source],
+          best: { ...s, symbol: sym },
+        });
+        continue;
+      }
+      existing.sentiment += s.sentiment;
+      existing.raw_sentiment = (existing.raw_sentiment + s.raw_sentiment) / 2;
+      existing.volume += s.volume;
+      if (!existing.sources.includes(s.source_detail || s.source)) {
+        existing.sources.push(s.source_detail || s.source);
+      }
+      if (Math.abs(s.sentiment) > Math.abs(existing.best.sentiment)) {
+        existing.best = { ...s, symbol: sym };
+      }
+    }
+
+    const sourceCountBonus = (n: number) => (n >= 3 ? 1.4 : n >= 2 ? 1.2 : 1);
+
+    const merged: Signal[] = [];
+    for (const [, v] of bySymbol) {
+      const count = v.sources.length;
+      const bonus = sourceCountBonus(count);
+      const compositeScore = Math.abs(v.sentiment) * (v.best.source_weight ?? 0.8) * (v.best.freshness ?? 0.9) * bonus;
+      merged.push({
+        ...v.best,
+        sentiment: v.sentiment,
+        raw_sentiment: v.raw_sentiment,
+        volume: v.volume,
+        reason: count > 1 ? `${v.best.reason} (${count} sources)` : v.best.reason,
+        source_count: count,
+        quality_score: compositeScore,
+      });
+    }
+
+    const freshSignals = merged
+      .sort((a, b) => (b.quality_score ?? Math.abs(b.sentiment)) - (a.quality_score ?? Math.abs(a.sentiment)))
       .slice(0, MAX_SIGNALS);
 
     this.state.signalCache = freshSignals;
@@ -1546,8 +1634,14 @@ export class MahoragaHarness extends DurableObject<Env> {
       reddit: redditSignals.length,
       crypto: cryptoSignals.length,
       sec: secSignals.length,
+      finnhub: finnhubSignals.length,
+      fmp: fmpSignals.length,
+      quiver: quiverSignals.length,
+      alpacaScreener: alpacaScreenerSignals.length,
+      alpacaNews: alpacaNewsSignals.length,
       total: this.state.signalCache.length,
     });
+    this._rateLimiter = null;
   }
 
   private async gatherStockTwits(): Promise<Signal[]> {
@@ -1580,7 +1674,10 @@ export class MahoragaHarness extends DurableObject<Env> {
     };
 
     try {
-      const trendingRes = await fetchWithRetry("https://api.stocktwits.com/api/2/trending/symbols.json");
+      const [trendingRes, equitiesRes] = await Promise.all([
+        fetchWithRetry("https://api.stocktwits.com/api/2/trending/symbols.json"),
+        fetchWithRetry("https://api.stocktwits.com/api/2/trending/symbols/equities.json"),
+      ]);
       if (!trendingRes) {
         this.log("StockTwits", "cloudflare_blocked", {
           message: "StockTwits API blocked by Cloudflare - using Reddit only",
@@ -1588,9 +1685,25 @@ export class MahoragaHarness extends DurableObject<Env> {
         return [];
       }
       const trendingData = (await trendingRes.json()) as { symbols?: Array<{ symbol: string }> };
-      const trending = trendingData.symbols || [];
+      let trending = trendingData.symbols || [];
+      if (equitiesRes?.ok) {
+        try {
+          const equitiesData = (await equitiesRes.json()) as { symbols?: Array<{ symbol: string }> };
+          const equities = equitiesData.symbols || [];
+          const seen = new Set(trending.map((s) => s.symbol));
+          for (const s of equities) {
+            if (!seen.has(s.symbol)) {
+              seen.add(s.symbol);
+              trending = [...trending, s];
+            }
+          }
+        } catch {
+          // ignore equities parse errors
+        }
+      }
+      trending = trending.slice(0, 30);
 
-      for (const sym of trending.slice(0, 15)) {
+      for (const sym of trending) {
         try {
           const streamRes = await fetchWithRetry(
             `https://api.stocktwits.com/api/2/streams/symbol/${sym.symbol}.json?limit=30`
@@ -1651,7 +1764,17 @@ export class MahoragaHarness extends DurableObject<Env> {
   }
 
   private async gatherReddit(): Promise<Signal[]> {
-    const subreddits = ["wallstreetbets", "stocks", "investing", "options"];
+    const subreddits = [
+      "wallstreetbets",
+      "stocks",
+      "investing",
+      "options",
+      "pennystocks",
+      "smallstreetbets",
+      "thetagang",
+      "dividends",
+      "securityanalysis",
+    ];
     const tickerData = new Map<
       string,
       {
@@ -1672,7 +1795,7 @@ export class MahoragaHarness extends DurableObject<Env> {
       const sourceWeight = SOURCE_CONFIG.weights[`reddit_${sub}` as keyof typeof SOURCE_CONFIG.weights] || 0.7;
 
       try {
-        const res = await fetch(`https://www.reddit.com/r/${sub}/hot.json?limit=25`, {
+        const res = await fetch(`https://www.reddit.com/r/${sub}/hot.json?limit=50`, {
           headers: { "User-Agent": "Mahoraga/2.0" },
         });
         if (!res.ok) continue;
@@ -1847,27 +1970,37 @@ export class MahoragaHarness extends DurableObject<Env> {
     const signals: Signal[] = [];
 
     try {
-      const response = await fetch(
-        "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&company=&dateb=&owner=include&count=40&output=atom",
-        {
-          headers: {
-            "User-Agent": "Mahoraga Trading Bot (contact@example.com)",
-            Accept: "application/atom+xml",
-          },
-        }
-      );
+      const [response8k, response4] = await Promise.all([
+        fetch(
+          "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&company=&dateb=&owner=include&count=40&output=atom",
+          {
+            headers: {
+              "User-Agent": "Mahoraga Trading Bot (contact@example.com)",
+              Accept: "application/atom+xml",
+            },
+          }
+        ),
+        fetch(
+          "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&company=&dateb=&owner=include&count=40&output=atom",
+          {
+            headers: {
+              "User-Agent": "Mahoraga Trading Bot (contact@example.com)",
+              Accept: "application/atom+xml",
+            },
+          }
+        ),
+      ]);
 
-      if (!response.ok) {
-        this.log("SEC", "fetch_error", { status: response.status });
-        return signals;
-      }
+      const text8k = response8k.ok ? await response8k.text() : "";
+      const text4 = response4.ok ? await response4.text() : "";
 
-      const text = await response.text();
-      const entries = this.parseSECAtomFeed(text);
+      const entries8k = this.parseSECAtomFeed(text8k).slice(0, 40);
+      const entries4 = this.parseSECAtomFeed(text4).slice(0, 40);
+      const entries = [...entries8k, ...entries4];
 
       const alpaca = createAlpacaProviders(this.env);
 
-      for (const entry of entries.slice(0, 15)) {
+      for (const entry of entries) {
         const ticker = await this.resolveTickerFromCompanyName(entry.company);
         if (!ticker) continue;
 
@@ -1898,9 +2031,360 @@ export class MahoragaHarness extends DurableObject<Env> {
         });
       }
 
-      this.log("SEC", "gathered_signals", { count: signals.length });
+      this.log("SEC", "gathered_signals", { count: signals.length, "8k": entries8k.length, "4": entries4.length });
     } catch (error) {
       this.log("SEC", "error", { message: String(error) });
+    }
+
+    return signals;
+  }
+
+  private async gatherFinnhub(): Promise<Signal[]> {
+    const signals: Signal[] = [];
+    if (!this.env.FINNHUB_API_KEY) return signals;
+    if (this._rateLimiter && !this._rateLimiter.consume("finnhub")) return signals;
+
+    try {
+      const finnhub = createFinnhubProvider(this.env.FINNHUB_API_KEY, this.env.CACHE);
+      const newsWeight = SOURCE_CONFIG.weights.finnhub_news;
+      const insiderWeight = SOURCE_CONFIG.weights.finnhub_insider;
+
+      const [newsItems, insiderList] = await Promise.all([
+        finnhub.getMarketNews(),
+        finnhub.getInsiderTransactions(),
+      ]);
+
+      const now = Date.now();
+
+      const userBlacklist = new Set((this.state.config.ticker_blacklist || []).map((s) => s.toUpperCase()));
+      for (const item of newsItems) {
+        const related = (item.related || "").trim().split(/[\s,]+/).filter((s) => s.length >= 1 && s.length <= 5 && /^[A-Z.]+$/i.test(s));
+        const freshness = Math.exp((-Math.max(0, now / 1000 - item.datetime) / (60 * 60)) * 0.5);
+        for (const symbol of related) {
+          const sym = symbol.toUpperCase();
+          if (TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) continue;
+          signals.push({
+            symbol: sym,
+            source: "finnhub_news",
+            source_detail: "finnhub_news",
+            sentiment: 0.35 * newsWeight * freshness,
+            raw_sentiment: 0.35,
+            volume: 1,
+            freshness,
+            source_weight: newsWeight,
+            reason: item.headline?.slice(0, 80) || "Market news",
+            timestamp: now,
+          });
+        }
+      }
+
+      for (const tx of insiderList) {
+        const symbol = (tx.symbol || "").trim().toUpperCase();
+        if (!symbol || symbol.length > 5 || TICKER_BLACKLIST.has(symbol) || userBlacklist.has(symbol)) continue;
+        const change = tx.change ?? 0;
+        const rawSentiment = change > 0 ? 0.5 : change < 0 ? -0.4 : 0;
+        const freshness = 0.9;
+        signals.push({
+          symbol,
+          source: "finnhub_insider",
+          source_detail: "finnhub_insider",
+          sentiment: rawSentiment * insiderWeight * freshness,
+          raw_sentiment: rawSentiment,
+          volume: Math.abs(change),
+          freshness,
+          source_weight: insiderWeight,
+          reason: `${tx.name || "Insider"}: ${change > 0 ? "Buy" : "Sell"} ${Math.abs(change)}`,
+          timestamp: now,
+        });
+      }
+
+      this.log("Finnhub", "gathered_signals", { news: newsItems.length, insider: insiderList.length, signals: signals.length });
+    } catch (error) {
+      this.log("Finnhub", "error", { message: String(error) });
+    }
+
+    return signals;
+  }
+
+  private async gatherFMPScreener(): Promise<Signal[]> {
+    const signals: Signal[] = [];
+    if (!this.env.FMP_API_KEY) return signals;
+    if (this._rateLimiter && !this._rateLimiter.consume("fmp")) return signals;
+
+    try {
+      const fmp = createFMPProvider(this.env.FMP_API_KEY, this.env.CACHE);
+      const gainersWeight = SOURCE_CONFIG.weights.fmp_gainers;
+      const losersWeight = SOURCE_CONFIG.weights.fmp_losers;
+      const activesWeight = SOURCE_CONFIG.weights.fmp_actives;
+
+      const [gainers, losers, actives] = await Promise.all([
+        fmp.getMarketGainers(),
+        fmp.getMarketLosers(),
+        fmp.getMostActive(),
+      ]);
+
+      const now = Date.now();
+      const userBlacklist = new Set((this.state.config.ticker_blacklist || []).map((s) => s.toUpperCase()));
+
+      const addMover = (item: { symbol: string; name?: string; price?: number; changesPercentage?: number; change?: number; volume?: number }, source: string, weight: number, rawSentiment: number) => {
+        const sym = (item.symbol || "").trim().toUpperCase();
+        if (!sym || sym.length > 5 || TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) return;
+        const pct = item.changesPercentage ?? (item.change != null && item.price ? (item.change / item.price) * 100 : 0);
+        signals.push({
+          symbol: sym,
+          source,
+          source_detail: source,
+          sentiment: rawSentiment * weight,
+          raw_sentiment: rawSentiment,
+          volume: item.volume ?? 1,
+          freshness: 0.95,
+          source_weight: weight,
+          reason: `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`,
+          timestamp: now,
+        });
+      };
+
+      for (const item of gainers) {
+        const pct = item.changesPercentage ?? 0;
+        addMover(item, "fmp_gainers", gainersWeight, Math.min(0.3 + pct / 100, 0.9));
+      }
+      for (const item of losers) {
+        const pct = item.changesPercentage ?? 0;
+        addMover(item, "fmp_losers", losersWeight, Math.max(-0.5, -0.2 - Math.abs(pct) / 100));
+      }
+      for (const item of actives) {
+        addMover(item, "fmp_actives", activesWeight, 0.2);
+      }
+
+      this.log("FMP", "gathered_signals", { gainers: gainers.length, losers: losers.length, actives: actives.length, signals: signals.length });
+    } catch (error) {
+      this.log("FMP", "error", { message: String(error) });
+    }
+
+    return signals;
+  }
+
+  private async gatherQuiverQuant(): Promise<Signal[]> {
+    const signals: Signal[] = [];
+    if (!this.env.QUIVER_API_TOKEN) return signals;
+
+    try {
+      const quiver = createQuiverQuantProvider(this.env.QUIVER_API_TOKEN);
+      const now = Date.now();
+      const userBlacklist = new Set((this.state.config.ticker_blacklist || []).map((s) => s.toUpperCase()));
+
+      const [wsb, congress, insiders, offExchange] = await Promise.all([
+        quiver.getWallStreetBets(),
+        quiver.getCongressTrading(),
+        quiver.getInsiders(),
+        quiver.getOffExchange(),
+      ]);
+
+      const wsbWeight = SOURCE_CONFIG.weights.quiver_wsb;
+      const congressWeight = SOURCE_CONFIG.weights.quiver_congress;
+      const insidersWeight = SOURCE_CONFIG.weights.quiver_insiders;
+      const offExWeight = SOURCE_CONFIG.weights.quiver_offexchange;
+
+      for (const row of wsb) {
+        const sym = (row.Ticker || "").trim().toUpperCase();
+        if (!sym || sym.length > 5 || TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) continue;
+        const mentions = Number(row.Mentions) || 1;
+        const bullish = Number(row.Bullish) || 0;
+        const bearish = Number(row.Bearish) || 0;
+        const raw = mentions > 0 ? (bullish - bearish) / mentions : 0;
+        const sentiment = Math.max(-0.8, Math.min(0.8, raw)) * wsbWeight;
+        signals.push({
+          symbol: sym,
+          source: "quiver_wsb",
+          source_detail: "quiver_wsb",
+          sentiment,
+          raw_sentiment: raw,
+          volume: mentions,
+          freshness: 0.9,
+          source_weight: wsbWeight,
+          reason: `WSB: ${mentions} mentions, ${bullish}B/${bearish}b`,
+          timestamp: now,
+        });
+      }
+
+      for (const row of congress) {
+        const sym = (row.Ticker || "").trim().toUpperCase();
+        if (!sym || sym.length > 5 || TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) continue;
+        const type = (row.Type || "").toLowerCase();
+        const raw = type.includes("purchase") || type.includes("buy") ? 0.5 : type.includes("sale") || type.includes("sell") ? -0.4 : 0;
+        signals.push({
+          symbol: sym,
+          source: "quiver_congress",
+          source_detail: "quiver_congress",
+          sentiment: raw * congressWeight,
+          raw_sentiment: raw,
+          volume: 1,
+          freshness: 0.9,
+          source_weight: congressWeight,
+          reason: `Congress: ${row.Type || "trade"} ${row.Representative || ""}`.slice(0, 60),
+          timestamp: now,
+        });
+      }
+
+      for (const row of insiders) {
+        const sym = (row.Ticker || "").trim().toUpperCase();
+        if (!sym || sym.length > 5 || TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) continue;
+        const tx = (row.Transaction || "").toLowerCase();
+        const raw = tx.includes("p") || tx.includes("buy") ? 0.5 : tx.includes("s") || tx.includes("sell") ? -0.4 : 0;
+        signals.push({
+          symbol: sym,
+          source: "quiver_insiders",
+          source_detail: "quiver_insiders",
+          sentiment: raw * insidersWeight,
+          raw_sentiment: raw,
+          volume: 1,
+          freshness: 0.9,
+          source_weight: insidersWeight,
+          reason: `Insider: ${row.Transaction || ""} ${row.Name || ""}`.slice(0, 60),
+          timestamp: now,
+        });
+      }
+
+      for (const row of offExchange) {
+        const sym = (row.Ticker || "").trim().toUpperCase();
+        if (!sym || sym.length > 5 || TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) continue;
+        const shortVol = Number(row.ShortVolume) || 0;
+        const totalVol = Number(row.TotalVolume) || 1;
+        const ratio = totalVol > 0 ? shortVol / totalVol : 0;
+        const raw = ratio > 0.5 ? -0.4 : ratio > 0.35 ? -0.2 : 0;
+        signals.push({
+          symbol: sym,
+          source: "quiver_offexchange",
+          source_detail: "quiver_offexchange",
+          sentiment: raw * offExWeight,
+          raw_sentiment: raw,
+          volume: totalVol,
+          freshness: 0.9,
+          source_weight: offExWeight,
+          reason: `Short vol ${(ratio * 100).toFixed(0)}%`,
+          timestamp: now,
+        });
+      }
+
+      this.log("QuiverQuant", "gathered_signals", { wsb: wsb.length, congress: congress.length, insiders: insiders.length, offExchange: offExchange.length, signals: signals.length });
+    } catch (error) {
+      this.log("QuiverQuant", "error", { message: String(error) });
+    }
+
+    return signals;
+  }
+
+  private async gatherAlpacaScreener(): Promise<Signal[]> {
+    const signals: Signal[] = [];
+
+    try {
+      const alpaca = createAlpacaProviders(this.env);
+      const activesWeight = SOURCE_CONFIG.weights.alpaca_actives;
+      const moversWeight = SOURCE_CONFIG.weights.alpaca_movers;
+      const now = Date.now();
+      const userBlacklist = new Set((this.state.config.ticker_blacklist || []).map((s) => s.toUpperCase()));
+
+      const [mostActives, movers] = await Promise.all([
+        alpaca.screener.getMostActives(),
+        alpaca.screener.getMovers(),
+      ]);
+
+      for (const item of mostActives) {
+        const sym = (item.symbol || "").trim().toUpperCase();
+        if (!sym || sym.length > 5 || TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) continue;
+        signals.push({
+          symbol: sym,
+          source: "alpaca_actives",
+          source_detail: "alpaca_actives",
+          sentiment: 0.25 * activesWeight,
+          raw_sentiment: 0.25,
+          volume: item.volume ?? 1,
+          freshness: 0.95,
+          source_weight: activesWeight,
+          reason: "Most active by volume",
+          timestamp: now,
+        });
+      }
+
+      for (const item of movers.gainers) {
+        const sym = (item.symbol || "").trim().toUpperCase();
+        if (!sym || sym.length > 5 || TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) continue;
+        const pct = item.changePercentage ?? 0;
+        signals.push({
+          symbol: sym,
+          source: "alpaca_movers",
+          source_detail: "alpaca_movers_gainers",
+          sentiment: Math.min(0.9, 0.3 + pct / 100) * moversWeight,
+          raw_sentiment: Math.min(0.9, 0.3 + pct / 100),
+          volume: 1,
+          freshness: 0.95,
+          source_weight: moversWeight,
+          reason: `Gainer +${pct.toFixed(1)}%`,
+          timestamp: now,
+        });
+      }
+
+      for (const item of movers.losers) {
+        const sym = (item.symbol || "").trim().toUpperCase();
+        if (!sym || sym.length > 5 || TICKER_BLACKLIST.has(sym) || userBlacklist.has(sym)) continue;
+        const pct = item.changePercentage ?? 0;
+        signals.push({
+          symbol: sym,
+          source: "alpaca_movers",
+          source_detail: "alpaca_movers_losers",
+          sentiment: Math.max(-0.5, -0.2 - Math.abs(pct) / 100) * moversWeight,
+          raw_sentiment: Math.max(-0.5, -0.2 - Math.abs(pct) / 100),
+          volume: 1,
+          freshness: 0.95,
+          source_weight: moversWeight,
+          reason: `Loser ${pct.toFixed(1)}%`,
+          timestamp: now,
+        });
+      }
+
+      this.log("AlpacaScreener", "gathered_signals", { actives: mostActives.length, gainers: movers.gainers.length, losers: movers.losers.length, signals: signals.length });
+    } catch (error) {
+      this.log("AlpacaScreener", "error", { message: String(error) });
+    }
+
+    return signals;
+  }
+
+  private async gatherAlpacaNews(): Promise<Signal[]> {
+    const signals: Signal[] = [];
+
+    try {
+      const alpaca = createAlpacaProviders(this.env);
+      const newsWeight = SOURCE_CONFIG.weights.alpaca_news;
+      const now = Date.now();
+      const userBlacklist = new Set((this.state.config.ticker_blacklist || []).map((s) => s.toUpperCase()));
+
+      const articles = await alpaca.screener.getNews({ limit: 50 });
+
+      for (const article of articles) {
+        const symbols = article.symbols ?? [];
+        const headline = (article.headline || "").slice(0, 80);
+        for (const sym of symbols) {
+          const s = (sym || "").trim().toUpperCase();
+          if (!s || s.length > 5 || TICKER_BLACKLIST.has(s) || userBlacklist.has(s)) continue;
+          signals.push({
+            symbol: s,
+            source: "alpaca_news",
+            source_detail: "alpaca_news",
+            sentiment: 0.35 * newsWeight,
+            raw_sentiment: 0.35,
+            volume: 1,
+            freshness: 0.9,
+            source_weight: newsWeight,
+            reason: headline || "Market news",
+            timestamp: now,
+          });
+        }
+      }
+
+      this.log("AlpacaNews", "gathered_signals", { articles: articles.length, signals: signals.length });
+    } catch (error) {
+      this.log("AlpacaNews", "error", { message: String(error) });
     }
 
     return signals;
@@ -3056,7 +3540,7 @@ Respond with a JSON object containing a "results" array with one entry per signa
     }
   }
 
-  private async researchTopSignals(limit = 5): Promise<ResearchResult[]> {
+  private async researchTopSignals(limit = 10): Promise<ResearchResult[]> {
     const alpaca = createAlpacaProviders(this.env);
     const positions = await alpaca.trading.getPositions();
     const heldSymbols = new Set(positions.map((p) => p.symbol));

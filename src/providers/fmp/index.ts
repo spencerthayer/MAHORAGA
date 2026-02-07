@@ -8,6 +8,7 @@
 
 const FMP_BASE_URL = "https://financialmodelingprep.com";
 const CACHE_TTL_SECONDS = 300; // 5 minutes (crypto trades 24/7)
+const CACHE_TTL_SCREENER = 1800; // 30 minutes for screener to conserve 250/day
 
 export interface FMPCryptoQuote {
   symbol: string;
@@ -25,6 +26,15 @@ export interface FMPCryptoQuote {
   previousClose: number;
   priceAvg50: number;
   priceAvg200: number;
+}
+
+export interface FMPStockMover {
+  symbol: string;
+  name: string;
+  price: number;
+  changesPercentage?: number;
+  change?: number;
+  volume?: number;
 }
 
 export class FMPProvider {
@@ -104,6 +114,96 @@ export class FMPProvider {
     } catch (error) {
       console.log(`[MahoragaHarness] FMP error for ${symbol}: ${error}`);
       return null;
+    }
+  }
+
+  async getMarketGainers(): Promise<FMPStockMover[]> {
+    const cacheKey = "fmp:gainers";
+    if (this.cache) {
+      try {
+        const cached = await this.cache.get(cacheKey, "json");
+        if (cached) return cached as FMPStockMover[];
+      } catch {
+        // continue
+      }
+    }
+    try {
+      const url = `${FMP_BASE_URL}/stable/biggest-gainers?apikey=${this.apiKey}`;
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const list = Array.isArray(data) ? (data as FMPStockMover[]) : [];
+      if (this.cache) {
+        try {
+          await this.cache.put(cacheKey, JSON.stringify(list), { expirationTtl: CACHE_TTL_SCREENER });
+        } catch {
+          // non-critical
+        }
+      }
+      return list;
+    } catch (error) {
+      console.log(`[FMP] getMarketGainers error: ${error}`);
+      return [];
+    }
+  }
+
+  async getMarketLosers(): Promise<FMPStockMover[]> {
+    const cacheKey = "fmp:losers";
+    if (this.cache) {
+      try {
+        const cached = await this.cache.get(cacheKey, "json");
+        if (cached) return cached as FMPStockMover[];
+      } catch {
+        // continue
+      }
+    }
+    try {
+      const url = `${FMP_BASE_URL}/stable/biggest-losers?apikey=${this.apiKey}`;
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const list = Array.isArray(data) ? (data as FMPStockMover[]) : [];
+      if (this.cache) {
+        try {
+          await this.cache.put(cacheKey, JSON.stringify(list), { expirationTtl: CACHE_TTL_SCREENER });
+        } catch {
+          // non-critical
+        }
+      }
+      return list;
+    } catch (error) {
+      console.log(`[FMP] getMarketLosers error: ${error}`);
+      return [];
+    }
+  }
+
+  async getMostActive(): Promise<FMPStockMover[]> {
+    const cacheKey = "fmp:actives";
+    if (this.cache) {
+      try {
+        const cached = await this.cache.get(cacheKey, "json");
+        if (cached) return cached as FMPStockMover[];
+      } catch {
+        // continue
+      }
+    }
+    try {
+      const url = `${FMP_BASE_URL}/stable/most-active?apikey=${this.apiKey}`;
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const list = Array.isArray(data) ? (data as FMPStockMover[]) : [];
+      if (this.cache) {
+        try {
+          await this.cache.put(cacheKey, JSON.stringify(list), { expirationTtl: CACHE_TTL_SCREENER });
+        } catch {
+          // non-critical
+        }
+      }
+      return list;
+    } catch (error) {
+      console.log(`[FMP] getMostActive error: ${error}`);
+      return [];
     }
   }
 }

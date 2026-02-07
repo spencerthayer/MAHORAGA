@@ -25,6 +25,38 @@ interface FinnhubMetricResponse {
   symbol: string;
 }
 
+export interface FinnhubNewsItem {
+  category: string;
+  datetime: number;
+  headline: string;
+  id: number;
+  image: string;
+  related: string;
+  source: string;
+  summary: string;
+  url: string;
+}
+
+export interface FinnhubInsiderTransaction {
+  name: string;
+  share: number;
+  change: number;
+  filingDate: string;
+  transactionDate: string;
+  transactionCode: string;
+  transactionPrice?: number;
+  symbol: string;
+}
+
+export interface FinnhubUpgradeDowngradeItem {
+  symbol: string;
+  gradeTime: number;
+  company: string;
+  fromGrade: string;
+  toGrade: string;
+  action: string;
+}
+
 export class FinnhubProvider {
   constructor(
     private apiKey: string,
@@ -92,6 +124,140 @@ export class FinnhubProvider {
       return metrics;
     } catch (error) {
       console.log(`[MahoragaHarness] Finnhub error for ${symbol}: ${error}`);
+      return null;
+    }
+  }
+
+  // --- Market-wide signal endpoints (free tier) ---
+
+  async getMarketNews(): Promise<FinnhubNewsItem[]> {
+    const cacheKey = "finnhub:news:general";
+
+    if (this.cache) {
+      try {
+        const cached = await this.cache.get(cacheKey, "json");
+        if (cached) return cached as FinnhubNewsItem[];
+      } catch {
+        // continue
+      }
+    }
+
+    try {
+      const url = `${FINNHUB_BASE_URL}/news?category=general&token=${this.apiKey}`;
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) return [];
+      const data = (await response.json()) as FinnhubNewsItem[];
+      if (this.cache) {
+        try {
+          await this.cache.put(cacheKey, JSON.stringify(data), { expirationTtl: CACHE_TTL_SECONDS });
+        } catch {
+          // non-critical
+        }
+      }
+      return Array.isArray(data) ? data : [];
+    } catch (error) {
+      console.log(`[Finnhub] getMarketNews error: ${error}`);
+      return [];
+    }
+  }
+
+  async getInsiderTransactions(symbol?: string): Promise<FinnhubInsiderTransaction[]> {
+    const cacheKey = symbol ? `finnhub:insider:${symbol}` : "finnhub:insider:latest";
+    if (this.cache) {
+      try {
+        const cached = await this.cache.get(cacheKey, "json");
+        if (cached) return (cached as { data: FinnhubInsiderTransaction[] }).data ?? [];
+      } catch {
+        // continue
+      }
+    }
+
+    try {
+      const params = new URLSearchParams({ token: this.apiKey });
+      if (symbol) params.set("symbol", symbol);
+      const url = `${FINNHUB_BASE_URL}/stock/insider-transactions?${params}`;
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) return [];
+      const data = (await response.json()) as { data?: FinnhubInsiderTransaction[]; symbol?: string };
+      const list = Array.isArray(data?.data) ? data.data : [];
+      if (this.cache) {
+        try {
+          await this.cache.put(cacheKey, JSON.stringify({ data: list }), { expirationTtl: CACHE_TTL_SECONDS });
+        } catch {
+          // non-critical
+        }
+      }
+      return list;
+    } catch (error) {
+      console.log(`[Finnhub] getInsiderTransactions error: ${error}`);
+      return [];
+    }
+  }
+
+  async getUpgradeDowngrade(symbol?: string, from?: string, to?: string): Promise<FinnhubUpgradeDowngradeItem[]> {
+    const cacheKey = symbol
+      ? `finnhub:upgrade:${symbol}`
+      : `finnhub:upgrade:${from ?? "none"}-${to ?? "none"}`;
+    if (this.cache) {
+      try {
+        const cached = await this.cache.get(cacheKey, "json");
+        if (cached) return cached as FinnhubUpgradeDowngradeItem[];
+      } catch {
+        // continue
+      }
+    }
+
+    try {
+      const params = new URLSearchParams({ token: this.apiKey });
+      if (symbol) params.set("symbol", symbol);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      const url = `${FINNHUB_BASE_URL}/stock/upgrade-downgrade?${params}`;
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) return [];
+      const data = (await response.json()) as FinnhubUpgradeDowngradeItem[];
+      const list = Array.isArray(data) ? data : [];
+      if (this.cache && list.length > 0) {
+        try {
+          await this.cache.put(cacheKey, JSON.stringify(list), { expirationTtl: CACHE_TTL_SECONDS });
+        } catch {
+          // non-critical
+        }
+      }
+      return list;
+    } catch (error) {
+      console.log(`[Finnhub] getUpgradeDowngrade error: ${error}`);
+      return [];
+    }
+  }
+
+  async getRecommendationTrends(symbol: string): Promise<{ buy: number; hold: number; sell: number; strongBuy: number; strongSell: number; period: string }[] | null> {
+    const cacheKey = `finnhub:recommendation:${symbol}`;
+    if (this.cache) {
+      try {
+        const cached = await this.cache.get(cacheKey, "json");
+        if (cached) return cached as { buy: number; hold: number; sell: number; strongBuy: number; strongSell: number; period: string }[];
+      } catch {
+        // continue
+      }
+    }
+
+    try {
+      const url = `${FINNHUB_BASE_URL}/stock/recommendation?symbol=${encodeURIComponent(symbol)}&token=${this.apiKey}`;
+      const response = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!response.ok) return null;
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : null;
+      if (this.cache && list) {
+        try {
+          await this.cache.put(cacheKey, JSON.stringify(list), { expirationTtl: CACHE_TTL_SECONDS });
+        } catch {
+          // non-critical
+        }
+      }
+      return list;
+    } catch (error) {
+      console.log(`[Finnhub] getRecommendationTrends error for ${symbol}: ${error}`);
       return null;
     }
   }

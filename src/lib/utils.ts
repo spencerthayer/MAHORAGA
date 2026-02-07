@@ -81,3 +81,56 @@ export function sanitizeForLog(obj: unknown): unknown {
   }
   return result;
 }
+
+/**
+ * Parse JSON from LLM output. Strips markdown code fences, then tries parse.
+ * On SyntaxError, tries to extract the first complete {...} to handle trailing text or truncated output.
+ */
+export function parseJSONFromLLM<T = unknown>(raw: string): T {
+  const cleaned = raw.replace(/```json\n?|```/g, "").trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    const start = cleaned.indexOf("{");
+    if (start === -1) throw new SyntaxError("No JSON object found");
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let quote = "";
+    for (let i = start; i < cleaned.length; i++) {
+      const c = cleaned[i];
+      if (inString) {
+        if (escape) {
+          escape = false;
+          continue;
+        }
+        if (c === "\\" && quote !== "'") {
+          escape = true;
+          continue;
+        }
+        if (c === quote) {
+          inString = false;
+          continue;
+        }
+        continue;
+      }
+      if (c === '"' || c === "'") {
+        inString = true;
+        quote = c;
+        continue;
+      }
+      if (c === "{") {
+        depth++;
+        continue;
+      }
+      if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          const extracted = cleaned.slice(start, i + 1);
+          return JSON.parse(extracted) as T;
+        }
+      }
+    }
+  }
+  throw new SyntaxError("Unterminated or invalid JSON");
+}

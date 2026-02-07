@@ -44,6 +44,7 @@ import { createFMPProvider } from "../providers/fmp";
 import { createQuiverQuantProvider } from "../providers/social/quiver-quant";
 import type { Account, LLMProvider, MarketClock, Position } from "../providers/types";
 import { RateLimiter } from "../lib/rate-limiter";
+import { parseJSONFromLLM } from "../lib/utils";
 
 // ============================================================================
 // SECTION 1: TYPES & CONFIGURATION
@@ -3211,6 +3212,7 @@ Respond with a JSON object containing a "results" array with one entry per signa
       return cached;
     }
 
+    let singleResponse: { content?: string; usage?: { completion_tokens?: number } } | undefined;
     try {
       const alpaca = createAlpacaProviders(this.env);
       const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
@@ -3251,7 +3253,8 @@ JSON response:
         messages: [
           {
             role: "system",
-            content: "You are a stock research analyst. Be skeptical of hype. Output valid JSON only.",
+            content:
+              "You are a stock research analyst. Be skeptical of hype. Output valid JSON only. Keep 'reasoning' to one short sentence. Do not put newlines or unescaped double-quotes inside any JSON string value.",
           },
           { role: "user", content: prompt },
         ],
@@ -3259,6 +3262,7 @@ JSON response:
         temperature: 0.3,
         response_format: { type: "json_object" },
       });
+      singleResponse = response;
 
       const usage = response.usage;
       if (usage) {
@@ -3266,7 +3270,7 @@ JSON response:
       }
 
       const content = response.content || "{}";
-      const analysis = JSON.parse(content.replace(/```json\n?|```/g, "").trim()) as {
+      type ResearchAnalysis = {
         verdict: "BUY" | "SKIP" | "WAIT";
         confidence: number;
         entry_quality: "excellent" | "good" | "fair" | "poor";
@@ -3274,6 +3278,7 @@ JSON response:
         red_flags: string[];
         catalysts: string[];
       };
+      const analysis = parseJSONFromLLM<ResearchAnalysis>(content);
 
       // Validate required fields - reject malformed LLM responses
       const validVerdicts = ["BUY", "SKIP", "WAIT"];
@@ -3326,6 +3331,15 @@ JSON response:
 
       return result;
     } catch (error) {
+      const content = singleResponse?.content ?? "";
+      const usage = singleResponse?.usage;
+      const maxTok = 500;
+      const posMatch = String(error).match(/at position (\d+)/);
+      const pos = posMatch?.[1] != null ? Number.parseInt(posMatch[1], 10) : -1;
+      const snippet = pos >= 0 && content.length ? content.slice(Math.max(0, pos - 80), pos + 80) : content.slice(-300);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignal:catch',message:'single_parse_failed',data:{symbol,contentLength:content.length,completionTokens:usage?.completion_tokens,maxTokens:maxTok,hitMaxTokens:usage?.completion_tokens===maxTok,errorPos:pos,contentStart:content.slice(0,200),contentEnd:content.slice(-250),snippetAroundPos:snippet},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       this.log("SignalResearch", "error", { symbol, message: String(error) });
       return null;
     }
@@ -3371,6 +3385,7 @@ JSON response:
       return cached;
     }
 
+    let batchResponse: { content?: string; usage?: { completion_tokens?: number } } | undefined;
     try {
       const alpaca = createAlpacaProviders(this.env);
       const cryptoSymbols = this.state.config.crypto_symbols || [];
@@ -3428,7 +3443,7 @@ Respond with a JSON object containing a "results" array with one entry per signa
           {
             role: "system",
             content:
-              "You are a research analyst. Be skeptical of hype. Evaluate each signal independently. Output valid JSON only.",
+              "You are a research analyst. Be skeptical of hype. Evaluate each signal independently. Output valid JSON only. For each entry keep 'reasoning' to one short sentence. Do not put newlines or unescaped double-quotes inside any JSON string value.",
           },
           { role: "user", content: prompt },
         ],
@@ -3436,6 +3451,7 @@ Respond with a JSON object containing a "results" array with one entry per signa
         temperature: 0.3,
         response_format: { type: "json_object" },
       });
+      batchResponse = response;
 
       const usage = response.usage;
       if (usage) {
@@ -3447,7 +3463,7 @@ Respond with a JSON object containing a "results" array with one entry per signa
       // #region agent log
       fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:response',message:'llm_response',data:{contentLength:content.length,contentPreview:content.slice(0,500),tokens:response.usage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
       // #endregion
-      const parsed = JSON.parse(content.replace(/```json\n?|```/g, "").trim());
+      const parsed = parseJSONFromLLM<{ results?: unknown[] } | unknown[]>(content);
       const resultsArray: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.results) ? parsed.results : [];
 
       const validVerdicts = ["BUY", "SKIP", "WAIT"];
@@ -3520,8 +3536,14 @@ Respond with a JSON object containing a "results" array with one entry per signa
 
       return [...cached, ...batchResults];
     } catch (error) {
+      const content = batchResponse?.content ?? "";
+      const usage = batchResponse?.usage;
+      const maxTokens = Math.min(300 * uncached.length, 4000);
+      const posMatch = String(error).match(/at position (\d+)/);
+      const pos = posMatch?.[1] != null ? Number.parseInt(posMatch[1], 10) : -1;
+      const snippet = pos >= 0 && content.length ? content.slice(Math.max(0, pos - 80), pos + 80) : content.slice(-400);
       // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:error',message:'batch_failed',data:{error:String(error).slice(0,300)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:catch',message:'batch_parse_failed',data:{contentLength:content.length,completionTokens:usage?.completion_tokens,maxTokens,hitMaxTokens:usage?.completion_tokens===maxTokens,errorPos:pos,contentStart:content.slice(0,200),contentEnd:content.slice(-300),snippetAroundPos:snippet},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
       // #endregion
       this.log("SignalResearch", "batch_error", {
         message: String(error),

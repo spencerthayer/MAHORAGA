@@ -13,7 +13,7 @@ MAHORAGA monitors social sentiment from StockTwits and Reddit, uses AI (OpenAI, 
 ## Features
 
 - **24/7 Operation** — Runs on Cloudflare Workers, no local machine required
-- **Multi-Source Signals** — StockTwits, Reddit (4 subreddits), Twitter confirmation
+- **Multi-Source Signals** — StockTwits, Reddit (9 subreddits), Finnhub (news, insider, upgrades), FMP screener, SEC (8-K + Form 4), QuiverQuant, Alpaca screener & news, Twitter confirmation
 - **Multi-Provider LLM** — OpenAI, Anthropic, Google, xAI, DeepSeek via AI SDK, OpenRouter (300+ models), or Cloudflare AI Gateway
 - **Crypto Trading** — Trade BTC, ETH, SOL around the clock
 - **Options Support** — High-conviction options plays
@@ -87,9 +87,10 @@ npx wrangler secret put TWITTER_BEARER_TOKEN
 npx wrangler secret put DISCORD_WEBHOOK_URL
 npx wrangler secret put KILL_SWITCH_SECRET   # Emergency kill switch (separate from API token)
 
-# Optional: Market data providers for position tooltips
-npx wrangler secret put FINNHUB_API_KEY      # Equity fundamentals (free: https://finnhub.io/register)
-npx wrangler secret put FMP_API_KEY          # Crypto market data (free: https://financialmodelingprep.com/register)
+# Optional: Market data and signal providers
+npx wrangler secret put FINNHUB_API_KEY      # Equity fundamentals + signal gatherer (free: https://finnhub.io/register)
+npx wrangler secret put FMP_API_KEY          # Crypto market data + screener signals (free: https://financialmodelingprep.com/register)
+npx wrangler secret put QUIVER_API_KEY       # QuiverQuant sentiment/fundamentals (optional, for gatherQuiverQuant)
 ```
 
 ### 4. Deploy
@@ -299,10 +300,15 @@ MAHORAGA gathers social sentiment from multiple sources in parallel. The core pi
 
 | Source | API Key Required | Role | Weight |
 |--------|-----------------|------|--------|
-| **StockTwits** | No (public API) | Primary signal — uses native Bullish/Bearish labels | 0.85 |
-| **Reddit** | No (public API) | Primary signal — keyword-based sentiment from 4 subreddits | 0.6–0.9 per sub |
+| **StockTwits** | No (public API) | Primary signal — 30 symbols, equities endpoint, Bullish/Bearish labels | 0.85 |
+| **Reddit** | No (public API) | Primary signal — 9 subreddits, 50 posts each, keyword-based sentiment | 0.6–0.9 per sub |
+| **Finnhub** | Yes (`FINNHUB_API_KEY`) | News, insider transactions, analyst upgrades/downgrades | — |
+| **FMP** | Yes (`FMP_API_KEY`) | Screeners — gainers, losers, most active | — |
+| **SEC EDGAR** | No (public API) | 8-K and Form 4 feeds (40 entries each), filing-based sentiment | — |
+| **QuiverQuant** | Yes (`QUIVER_API_KEY`) | Alternative sentiment/fundamentals (when configured) | — |
+| **Alpaca Screener** | Uses Alpaca key | Most actives, movers (when Alpaca configured) | — |
+| **Alpaca News** | Uses Alpaca key | News feed for screened symbols (when Alpaca configured) | — |
 | **Twitter/X** | Yes (`TWITTER_BEARER_TOKEN`) | Optional confirmation only — boosts existing signals | 0.90–0.95 |
-| **SEC Filings** | No (public API) | Filing-type-based sentiment (8-K, 10-K, etc.) | — |
 | **Crypto Momentum** | No (uses Alpaca key) | Price-momentum-based sentiment for crypto assets | — |
 
 ### How It Works
@@ -312,6 +318,41 @@ MAHORAGA gathers social sentiment from multiple sources in parallel. The core pi
 3. **Filter** — Signals below `min_sentiment_score` (default 0.3) are dropped. StockTwits requires minimum 5 messages per symbol; Reddit requires minimum 2 mentions
 4. **Confirm** (optional) — If `TWITTER_BEARER_TOKEN` is set, signals with sentiment >= 0.3 are checked against recent tweets with actionable keywords (unusual flow, sweep, whale, breaking, upgrade/downgrade). Matching Twitter sentiment boosts signal confidence
 5. **Research** — Surviving signals are sent to the LLM for deep analysis and final BUY/SKIP/HOLD verdict
+
+### Market signal coverage expansion
+
+The signal pipeline was expanded to include more data sources, higher limits, and better UX:
+
+**Data sources and gatherers**
+
+- **Finnhub** — `getUpgradeDowngrade()`, `getMarketNews()`, `getInsiderTransactions()`; harness method `gatherFinnhub()` (requires `FINNHUB_API_KEY`).
+- **FMP (Financial Modeling Prep)** — `getMarketGainers()`, `getMarketLosers()`, `getMostActive()`; harness method `gatherFMPScreener()` (requires `FMP_API_KEY`).
+- **SEC EDGAR** — 8-K and Form 4 feeds, 40 entries each.
+- **StockTwits** — Up to 30 symbols, equities-specific endpoint.
+- **Reddit** — 5 additional subreddits (9 total), 50 posts per subreddit.
+- **QuiverQuant** — New provider and harness method `gatherQuiverQuant()` (optional; requires `QUIVER_API_KEY` when used).
+- **Alpaca** — New screener (most actives, movers) via `gatherAlpacaScreener()`, and `gatherAlpacaNews()` for news on screened symbols (uses existing Alpaca credentials).
+
+**Backend**
+
+- **MAX_SIGNALS** increased to 500 (merged signals before research).
+- **Deduplication** of signals by symbol/source to avoid duplicate research.
+- **Composite scoring** improved for ranking which signals get researched.
+- **Research limit** (e.g. top 10) — only the top N signals by composite score are sent to the analyst LLM.
+
+**Frontend**
+
+- **No 20-signal cap** — dashboard shows the full signal set (up to backend limit).
+- **Source filter tabs** — filter signals by source (e.g. StockTwits, Reddit, Finnhub).
+- **Signal strength** — indicators (e.g. STRONG) for high composite score.
+
+**Rate limiting**
+
+- **Centralized RateLimiter** utility with per-provider budgets so all data providers respect API limits without blocking each other.
+
+**Logging**
+
+- Application logs from the harness (`this.log(agent, action, details)`) are written to in-memory `state.logs` and also to `console.log`, so they appear in the **session log files** (e.g. `logs/<timestamp>.log`) when running `./start`. Targeted logs for the analyst run, BUY+confidence filter, and Alpaca order submit can be added so the “BUY → attempt purchase” path is visible in those same log files.
 
 ### Twitter Setup (Optional)
 

@@ -733,9 +733,9 @@ export default function App() {
           </div>
         </header>
 
-        <div className="grid grid-cols-4 md:grid-cols-8 lg:grid-cols-12 gap-4">
-          {/* Row 1: Account, Positions, LLM Costs */}
-          <div className="col-span-4 md:col-span-4 lg:col-span-3">
+        <div className="grid grid-cols-4 md:grid-cols-8 lg:grid-cols-12 gap-4 max-[1080px]:grid-cols-2 max-[1080px]:grid-rows-[auto_auto_auto_auto_auto]">
+          {/* Row 1 @1080: ACCOUNT | LLM COSTS */}
+          <div className="col-span-4 md:col-span-4 lg:col-span-3 max-[1080px]:col-span-1 max-[1080px]:row-start-1 max-[1080px]:col-start-1">
             <Panel title="ACCOUNT" className="h-full">
               {account ? (
                 <div className="space-y-4">
@@ -777,7 +777,8 @@ export default function App() {
             </Panel>
           </div>
 
-          <div className="col-span-4 md:col-span-4 lg:col-span-5">
+          {/* Row 2 @1080: POSITIONS | POSITION PERFORMANCE */}
+          <div className="col-span-4 md:col-span-4 lg:col-span-5 max-[1080px]:col-span-1 max-[1080px]:row-start-2 max-[1080px]:col-start-1">
             <Panel title="POSITIONS" titleRight={`${positions.length}/${config?.max_positions || 5}`} className="h-full">
               {positions.length === 0 ? (
                 <div className="text-hud-text-dim text-sm py-8 text-center">No open positions</div>
@@ -866,7 +867,7 @@ export default function App() {
             </Panel>
           </div>
 
-          <div className="col-span-4 md:col-span-8 lg:col-span-4">
+          <div className="col-span-4 md:col-span-8 lg:col-span-4 max-[1080px]:col-span-1 max-[1080px]:row-start-1 max-[1080px]:col-start-2">
             <Panel title="LLM COSTS" titleRight={
               <button
                 className="hud-label hover:text-hud-error transition-colors"
@@ -928,10 +929,10 @@ export default function App() {
             </Panel>
           </div>
 
-          {/* Row 2: Portfolio Performance Chart */}
-          <div className="col-span-4 md:col-span-8 lg:col-span-8">
-            <Panel 
-              title="PORTFOLIO PERFORMANCE" 
+          {/* Row 3 @1080: PORTFOLIO PERFORMANCE full width */}
+          <div className="col-span-4 md:col-span-8 lg:col-span-8 max-[1080px]:col-span-2 max-[1080px]:row-start-3">
+            <Panel
+              title="PORTFOLIO PERFORMANCE"
               titleRight={
                 <div className="flex gap-2">
                   {(['1D', '1W', '1M'] as const).map(p => (
@@ -972,7 +973,7 @@ export default function App() {
             </Panel>
           </div>
 
-          <div className="col-span-4 md:col-span-8 lg:col-span-4">
+          <div className="col-span-4 md:col-span-8 lg:col-span-4 max-[1080px]:col-span-1 max-[1080px]:row-start-2 max-[1080px]:col-start-2">
             <Panel title="POSITION PERFORMANCE" titleRight="% CHANGE" className="h-[320px]">
               {positions.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-hud-text-dim text-sm">
@@ -1020,8 +1021,8 @@ export default function App() {
             </Panel>
           </div>
 
-          {/* Row 3: Signals, Activity, Research */}
-          <div className="col-span-4 md:col-span-4 lg:col-span-4">
+          {/* Row 4 @1080: ACTIVE SIGNALS | ACTIVITY FEED */}
+          <div className="col-span-4 md:col-span-4 lg:col-span-4 max-[1080px]:col-span-1 max-[1080px]:row-start-4 max-[1080px]:col-start-1">
             <Panel title="ACTIVE SIGNALS" titleRight={signalFilter === 'all' ? signals.length.toString() : `${filteredSignals.length} / ${signals.length}`} className="h-80">
               <div className="flex flex-wrap gap-1 mb-2 shrink-0">
                 {(['all', 'social', 'market_data', 'sec', 'crypto'] as const).map((f) => (
@@ -1124,7 +1125,7 @@ export default function App() {
             </Panel>
           </div>
 
-          <div className="col-span-4 md:col-span-4 lg:col-span-4">
+          <div className="col-span-4 md:col-span-4 lg:col-span-4 max-[1080px]:col-span-1 max-[1080px]:row-start-4 max-[1080px]:col-start-2">
             <Panel title="ACTIVITY FEED" titleRight="LIVE" className="h-80">
               <div className="overflow-y-auto h-full font-mono text-xs space-y-1">
                 {logs.length === 0 ? (
@@ -1155,7 +1156,8 @@ export default function App() {
             </Panel>
           </div>
 
-          <div className="col-span-4 md:col-span-8 lg:col-span-4">
+          {/* Row 5 @1080: SIGNAL RESEARCH full width */}
+          <div className="col-span-4 md:col-span-8 lg:col-span-4 max-[1080px]:col-span-2 max-[1080px]:row-start-5">
             <Panel title="SIGNAL RESEARCH" titleRight={Object.keys(status?.signalResearch || {}).length.toString()} className="h-80">
               <div className="overflow-y-auto h-full space-y-2">
                 {Object.entries(status?.signalResearch || {}).length === 0 ? (

@@ -2788,30 +2788,39 @@ Respond with a JSON object containing a "results" array with one entry per signa
   ]
 }`;
 
-      const maxTokens = Math.min(300 * uncached.length, 4000);
+      const maxTokens = Math.min(450 * uncached.length, 3000);
 
-      const response = await this._llm.complete({
-        model: this.state.config.llm_model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a crypto analyst. Be skeptical of FOMO. Crypto is volatile - only recommend BUY for strong setups. Output valid JSON only.",
-          },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: maxTokens,
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-      });
+      let response: { content?: string; usage?: LlmUsage } | undefined;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        response = await this._llm.complete({
+          model: this.state.config.llm_model,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a crypto analyst. Be skeptical of FOMO. Crypto is volatile - only recommend BUY for strong setups. Output valid JSON only.",
+            },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.3,
+          response_format: { type: "json_object" },
+        });
+        if ((response.content ?? "").trim().length >= 10) break;
+      }
 
-      const usage = response.usage;
-      if (usage) {
+      const usage = response?.usage;
+      if (usage?.prompt_tokens != null && usage?.completion_tokens != null) {
         this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
       }
 
-      const content = response.content || "{}";
-      const parsed = JSON.parse(content.replace(/```json\n?|```/g, "").trim());
+      const content = response?.content || "{}";
+      // #region agent log
+      if (content.length < 200) {
+        fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchCryptoBatch:short_content',message:'crypto_batch_short_content',data:{contentLength:content.length,rawContent:content,uncachedCount:uncached.length,maxTokens},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H6'})}).catch(()=>{});
+      }
+      // #endregion
+      const parsed = parseJSONFromLLM<{ results?: unknown[] } | unknown[]>(content);
       const resultsArray: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.results) ? parsed.results : [];
 
       const validVerdicts = ["BUY", "SKIP", "WAIT"];
@@ -2854,6 +2863,10 @@ Respond with a JSON object containing a "results" array with one entry per signa
           catalysts: result.catalysts.length,
           red_flags: result.red_flags.length,
         });
+      }
+
+      if (batchResults.length === 0) {
+        throw new Error("Crypto batch returned no valid entries");
       }
 
       this.log("Crypto", "batch_complete", {

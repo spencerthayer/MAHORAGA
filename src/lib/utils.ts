@@ -131,6 +131,14 @@ export function parseJSONFromLLM<T = unknown>(raw: string): T {
         }
       }
     }
+    if (depth > 0 && !inString) {
+      const closed = cleaned.slice(start) + "}".repeat(depth);
+      try {
+        return JSON.parse(closed) as T;
+      } catch {
+        // fall through to throw
+      }
+    }
   }
   throw new SyntaxError("Unterminated or invalid JSON");
 }

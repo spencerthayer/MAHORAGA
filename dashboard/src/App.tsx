@@ -640,12 +640,18 @@ export default function App() {
 
   if (error && !status) {
     const isAuthError = error.includes('Unauthorized')
+    const isConnectionError = !isAuthError && (error.includes('Connection failed') || error.includes('fetch') || error.includes('OFFLINE'))
     return (
       <div className="min-h-screen bg-hud-bg flex items-center justify-center p-6">
         <Panel title={isAuthError ? "AUTHENTICATION REQUIRED" : "CONNECTION ERROR"} className="max-w-md w-full">
           <div className="text-center py-8">
             <div className="text-hud-error text-2xl mb-4">{isAuthError ? "NO TOKEN" : "OFFLINE"}</div>
             <p className="text-hud-text-dim text-sm mb-6">{error}</p>
+            {isConnectionError && (
+              <p className="text-hud-text-dim text-xs mb-4">
+                Start the backend from the project root: <code className="text-hud-primary">./start</code> (or <code className="text-hud-primary">./start backend</code> in another terminal).
+              </p>
+            )}
             {isAuthError ? (
               <div className="space-y-4">
                 <div className="text-left bg-hud-panel p-4 border border-hud-line">

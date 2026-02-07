@@ -46,6 +46,8 @@ import type { Account, LLMProvider, MarketClock, Position } from "../providers/t
 import { RateLimiter } from "../lib/rate-limiter";
 import { parseJSONFromLLM } from "../lib/utils";
 
+type LlmUsage = { prompt_tokens?: number; completion_tokens?: number; cost?: number; total_tokens?: number };
+
 // ============================================================================
 // SECTION 1: TYPES & CONFIGURATION
 // ============================================================================
@@ -3212,7 +3214,7 @@ Respond with a JSON object containing a "results" array with one entry per signa
       return cached;
     }
 
-    let singleResponse: { content?: string; usage?: { completion_tokens?: number } } | undefined;
+    let singleResponse: { content?: string; usage?: LlmUsage } | undefined;
     try {
       const alpaca = createAlpacaProviders(this.env);
       const isCrypto = isCryptoSymbol(symbol, this.state.config.crypto_symbols || []);
@@ -3248,28 +3250,37 @@ JSON response:
   "catalysts": ["positive factors"]
 }`;
 
-      const response = await this._llm.complete({
-        model: this.state.config.llm_model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a stock research analyst. Be skeptical of hype. Output valid JSON only. Keep 'reasoning' to one short sentence. Do not put newlines or unescaped double-quotes inside any JSON string value.",
-          },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 500,
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-      });
-      singleResponse = response;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await this._llm.complete({
+          model: this.state.config.llm_model,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a stock research analyst. Be skeptical of hype. Output valid JSON only. Keep 'reasoning' to one short sentence. Do not put newlines or unescaped double-quotes inside any JSON string value.",
+            },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 650,
+          temperature: 0.3,
+          response_format: { type: "json_object" },
+        });
+        singleResponse = response;
+        if ((response.content ?? "").trim().length >= 10) break;
+      }
+      const response = singleResponse!;
 
       const usage = response.usage;
-      if (usage) {
+      if (usage?.prompt_tokens != null && usage?.completion_tokens != null) {
         this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
       }
 
       const content = response.content || "{}";
+      // #region agent log
+      if (content.length <= 20) {
+        fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignal:content',message:'short_content',data:{symbol,contentLength:content.length,rawContent:content,usedDefault:!response.content},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+      }
+      // #endregion
       type ResearchAnalysis = {
         verdict: "BUY" | "SKIP" | "WAIT";
         confidence: number;
@@ -3283,11 +3294,14 @@ JSON response:
       // Validate required fields - reject malformed LLM responses
       const validVerdicts = ["BUY", "SKIP", "WAIT"];
       if (!analysis.verdict || !validVerdicts.includes(analysis.verdict)) {
+        // #region agent log
+        fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignal:invalid_response',message:'invalid_verdict',data:{symbol,contentLength:content.length,rawContent:content.slice(0,100),keys:Object.keys(analysis),usedDefault:!response.content},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+        // #endregion
         this.log("SignalResearch", "invalid_response", {
           symbol,
           reason: "Missing or invalid verdict",
           contentLength: content.length,
-          maxTokensHit: response.usage?.completion_tokens === 250,
+          maxTokensHit: response.usage?.completion_tokens === 650,
           keys: Object.keys(analysis),
         });
         return null;
@@ -3333,14 +3347,15 @@ JSON response:
     } catch (error) {
       const content = singleResponse?.content ?? "";
       const usage = singleResponse?.usage;
-      const maxTok = 500;
+      const maxTok = 650;
       const posMatch = String(error).match(/at position (\d+)/);
       const pos = posMatch?.[1] != null ? Number.parseInt(posMatch[1], 10) : -1;
       const snippet = pos >= 0 && content.length ? content.slice(Math.max(0, pos - 80), pos + 80) : content.slice(-300);
+      const errMsg = String(error);
       // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignal:catch',message:'single_parse_failed',data:{symbol,contentLength:content.length,completionTokens:usage?.completion_tokens,maxTokens:maxTok,hitMaxTokens:usage?.completion_tokens===maxTok,errorPos:pos,contentStart:content.slice(0,200),contentEnd:content.slice(-250),snippetAroundPos:snippet},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignal:catch',message:'single_parse_failed',data:{symbol,errorType:errMsg.includes('Unterminated')?'Unterminated':errMsg.includes('No JSON object')?'No JSON object':'other',contentLength:content.length,completionTokens:usage?.completion_tokens,maxTokens:maxTok,hitMaxTokens:usage?.completion_tokens===maxTok,errorPos:pos,contentStart:content.slice(0,200),contentEnd:content.slice(-250),snippetAroundPos:snippet},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
       // #endregion
-      this.log("SignalResearch", "error", { symbol, message: String(error) });
+      this.log("SignalResearch", "error", { symbol, message: errMsg });
       return null;
     }
   }
@@ -3385,7 +3400,7 @@ JSON response:
       return cached;
     }
 
-    let batchResponse: { content?: string; usage?: { completion_tokens?: number } } | undefined;
+    let batchResponse: { content?: string; usage?: LlmUsage } | undefined;
     try {
       const alpaca = createAlpacaProviders(this.env);
       const cryptoSymbols = this.state.config.crypto_symbols || [];
@@ -3435,26 +3450,30 @@ Respond with a JSON object containing a "results" array with one entry per signa
   ]
 }`;
 
-      const maxTokens = Math.min(300 * uncached.length, 4000);
+      const maxTokens = Math.min(400 * uncached.length, 4500);
 
-      const response = await this._llm.complete({
-        model: this.state.config.llm_model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a research analyst. Be skeptical of hype. Evaluate each signal independently. Output valid JSON only. For each entry keep 'reasoning' to one short sentence. Do not put newlines or unescaped double-quotes inside any JSON string value.",
-          },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: maxTokens,
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-      });
-      batchResponse = response;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await this._llm.complete({
+          model: this.state.config.llm_model,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a research analyst. Be skeptical of hype. Evaluate each signal independently. Output valid JSON only. For each entry keep 'reasoning' to one short sentence. Do not put newlines or unescaped double-quotes inside any JSON string value.",
+            },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.3,
+          response_format: { type: "json_object" },
+        });
+        batchResponse = response;
+        if ((response.content ?? "").trim().length >= 10) break;
+      }
+      const response = batchResponse!;
 
       const usage = response.usage;
-      if (usage) {
+      if (usage?.prompt_tokens != null && usage?.completion_tokens != null) {
         this.trackLLMCost(this.state.config.llm_model, usage.prompt_tokens, usage.completion_tokens, usage.cost);
       }
 
@@ -3462,6 +3481,9 @@ Respond with a JSON object containing a "results" array with one entry per signa
       const content = response.content || "{}";
       // #region agent log
       fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:response',message:'llm_response',data:{contentLength:content.length,contentPreview:content.slice(0,500),tokens:response.usage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+      if (content.length < 200) {
+        fetch('http://127.0.0.1:7246/ingest/e74a6fed-0be4-43c3-aabb-46a1af95b1a3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mahoraga-harness.ts:researchSignalsBatch:short_content',message:'batch_short_content',data:{contentLength:content.length,rawContent:content,uncachedCount:uncached.length,maxTokens},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+      }
       // #endregion
       const parsed = parseJSONFromLLM<{ results?: unknown[] } | unknown[]>(content);
       const resultsArray: unknown[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.results) ? parsed.results : [];
